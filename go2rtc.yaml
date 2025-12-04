@@ -1,0 +1,6 @@
+streams:
+  cam:
+    #Kamera
+    - exec:ffmpeg -f v4l2 -input_format mjpeg -video_size 1280x720 -i /dev/video0 -c:v libx264 -preset ultrafast -tune zerolatency -f h264 -
+    #Mikrofon
+    #- ffmpeg:device?audio=hw:0,0&channels=1
