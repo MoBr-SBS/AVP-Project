@@ -1,3 +1,7 @@
+api:
+  listen: ":1984"
+  token: "aB7dE9fG2hJ5kL8mN1pQ"
+
 streams:
   cam:
     #Kamera
