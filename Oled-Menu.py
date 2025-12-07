@@ -185,7 +185,7 @@ def get_display_ip():
     ip_addr = get_ip_address()
     if ip_addr not in ["N/A", "No IP found", "127.0.0.1"]:
         octets = ip_addr.split('.')
-        return "..." + ".".join(octets[-2:])
+        return "" + ".".join(octets[0:])
     else:
         return ip_addr
 
@@ -202,8 +202,8 @@ dashboard_servo_items = [
 ]
 dashboard_system_items = [
     {'label': 'CPU', 'icon': 'temp.png', 'getter': get_cpu_temp},
-    {'label': 'IP', 'icon': 'network.png', 'getter': get_display_ip},
-    {'label': 'Robot', 'icon': 'ok.png', 'getter': get_system_status} # Umbenannt
+    {'label': 'Server', 'icon': 'ok.png', 'getter': get_system_status},
+    {'label': '', 'icon': 'network.png', 'getter': get_display_ip}
 ]
 
 # ZUSTANDSVARIABLEN
@@ -355,16 +355,25 @@ def draw_system_info():
     ICON_SIZE = (16, 16)
     ICON_SPACE = 20
     LINE_HEIGHT = 20
+
     with canvas(device) as draw:
         draw.rectangle(device.bounding_box, outline="black", fill="black")
         for i, item in enumerate(dashboard_system_items):
             y = 0 + i * LINE_HEIGHT
             live_value = item['getter']()
             icon_img = load_icon(item['icon'], ICON_SIZE)
-            icon_pos_y = y
-            draw.bitmap((2, icon_pos_y), icon_img, fill="white")
-            draw.text((ICON_SPACE, y), f"{item['label']}:", font=font, fill="white")
-            draw.text((75, y), live_value, font=font, fill="white")
+
+            # Icon zeichnen (immer gleich)
+            draw.bitmap((2, y), icon_img, fill="white")
+
+            if item['label']:
+                # Alter Modus: Label anzeigen und Wert fest bei X=75
+                draw.text((ICON_SPACE, y), f"{item['label']}:", font=font, fill="white")
+                draw.text((75, y), live_value, font=font, fill="white")
+            else:
+                # Neuer Modus (für IP): Kein Label, Wert direkt hinter dem Icon
+                # Wir starten bei ICON_SPACE + etwas Puffer (z.B. 4px)
+                draw.text((ICON_SPACE + 2, y), live_value, font=font, fill="white")
 
 
 def draw_servo_angles():
