@@ -2,6 +2,8 @@ import asyncio
 import json
 import board
 import busio
+import hashlib
+import secrets
 from aiohttp import web
 from adafruit_servokit import ServoKit
 
@@ -41,6 +43,26 @@ def load_users():
         return {}
 
 
+def verify_password(stored_password, provided_password):
+    try:
+        # Den gespeicherten String am '$' trennen
+        salt, stored_hash = stored_password.split('$')
+
+        # Das eingegebene Passwort mit dem GLEICHEN Salt neu hashen
+        new_hash = hashlib.pbkdf2_hmac(
+            'sha256',
+            provided_password.encode('utf-8'),
+            bytes.fromhex(salt),
+            100000
+        )
+
+        # Vergleichen, ob der neu berechnete Hash mit dem gespeicherten übereinstimmt
+        return new_hash.hex() == stored_hash
+    except Exception as e:
+        # Falls das Format in der JSON falsch ist oder manipuliert wurde
+        print(f"Fehler bei Passwortprüfung: {e}")
+        return False
+
 # --- WEBSOCKET HANDLER ---
 async def websocket_handler(request):
     global client_connected, current_pan, current_tilt, client_ip, client_name
@@ -61,17 +83,16 @@ async def websocket_handler(request):
                 if 'type' in data and data['type'] == 'login':
                     users = load_users()
                     user = data.get('user')
-                    pw = data.get('pass')
+                    pw = data.get('pass')  # Das Passwort, das vom Browser kommt
 
-                    if user in users and users[user] == pw:
+                    # Prüfen ob User existiert UND ob das Passwort stimmt (mit der neuen Funktion)
+                    if user in users and verify_password(users[user], pw):
                         authenticated = True
                         client_connected = True
                         client_ip = current_user_ip
                         client_name = user
 
-                        # --- WICHTIG: URL mit Token bauen ---
-                        # Alte Version (blockiert): http://user:pass@IP...
-                        # Neue Version (erlaubt): http://IP...?token=...
+                        # --- URL mit Token ---
                         auth_stream_url = f"http://{host}:1984/stream.html?src=cam&mode=webrtc&token={CAM_TOKEN}"
 
                         print(f"Login erfolgreich: {user}")
@@ -83,6 +104,8 @@ async def websocket_handler(request):
                         })
                     else:
                         print(f"Login fehlgeschlagen für: {user}")
+                        # Kleiner Tipp: Bei Fehlschlag kurz warten, um Brute-Force zu verlangsamen
+                        await asyncio.sleep(1)
                         await ws.send_json({"type": "login_fail"})
 
                 # --- 2. STEUERUNG ---
