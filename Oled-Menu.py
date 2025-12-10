@@ -1,6 +1,6 @@
 import time
 import subprocess
-import requests
+# ENTFERNT: import requests
 import threading
 from pathlib import Path
 from PIL import Image, ImageFont
@@ -10,6 +10,8 @@ from luma.oled.device import sh1106
 from gpiozero import RotaryEncoder, Button
 import sys
 import textwrap
+import json  # NEU
+import os  # NEU
 
 
 # --- KONFIGURATION ---
@@ -25,15 +27,14 @@ class Config:
     WIDTH = 128
     HEIGHT = 64
     FPS = 30
+    POLL_INTERVAL = 0.5  # NEU: Interval für Shared Memory Abfrage
 
     # Pfade
     BASE_DIR = Path(__file__).parent
     ICON_DIR = BASE_DIR / "menu-icons"
     FONT_PATH = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
 
-    # API
-    API_URL = "http://localhost:8080/api/status"
-    API_POLL_INTERVAL = 1.0  # Sekunden
+    # ENTFERNT: API_URL und API_POLL_INTERVAL
 
 
 # --- RESOURCE MANAGER (Caching) ---
@@ -69,38 +70,49 @@ class ResourceManager:
 
 # --- DATA PROVIDER (Hintergrund-Thread) ---
 class SystemMonitor(threading.Thread):
-    """Holt Daten im Hintergrund, damit das UI nicht blockiert."""
+    """
+    Holt Daten im Hintergrund über Shared Memory (/dev/shm).
+    """
+
+    SHM_FILE = "/dev/shm/robot_status.json"
 
     def __init__(self):
         super().__init__()
-        self.daemon = True  # Beendet sich, wenn Hauptprogramm endet
+        self.daemon = True
         self.running = True
         self.data = {
             "pan": 90, "tilt": 90, "connected": False,
             "client_ip": "-", "client_name": "Keiner",
-            "server_online": False,
+            "server_online": False,  # Status: Ist die Datei im RAM vorhanden?
             "cpu_temp": "N/A",
             "ip": "N/A"
         }
 
     def run(self):
         while self.running:
-            self._fetch_api()
+            self._read_shared_memory()
             self._fetch_system_stats()
-            time.sleep(Config.API_POLL_INTERVAL)
+            time.sleep(Config.POLL_INTERVAL)
 
-    def _fetch_api(self):
-        try:
-            r = requests.get(Config.API_URL, timeout=0.5)
-            if r.status_code == 200:
-                json_data = r.json()
-                self.data.update(json_data)
-                self.data["server_online"] = True
-            else:
-                self.data["server_online"] = False
-        except:
-            self.data["connected"] = False
+    def _read_shared_memory(self):
+        # Prüfen, ob die Datei (der Status-Briefkasten) existiert
+        if not os.path.exists(self.SHM_FILE):
             self.data["server_online"] = False
+            self.data["connected"] = False
+            return
+
+        try:
+            with open(self.SHM_FILE, "r") as f:
+                json_data = json.load(f)
+
+            # Daten aktualisieren
+            self.data.update(json_data)
+            self.data["server_online"] = True
+
+        except (json.JSONDecodeError, OSError):
+            # Passiert, wenn die Datei gerade vom Roboter-Skript atomar ersetzt wird.
+            # Ignorieren und alte Daten behalten.
+            pass
 
     def _fetch_system_stats(self):
         # CPU Temp
@@ -124,6 +136,9 @@ class SystemMonitor(threading.Thread):
 
 # --- UI LOGIC ---
 class MenuController:
+    # ... (Rest der Klasse bleibt unverändert) ...
+    # (Da sich nur die Datenquelle, nicht der Aufruf, geändert hat)
+
     def __init__(self, device, resources, monitor):
         self.device = device
         self.res = resources
@@ -360,14 +375,11 @@ class MenuController:
             # Position berechnen
             max_scroll = total_lines - visible_lines
 
-            # Wir nutzen hier self.info_scroll für die Position,
-            # damit der Balken sich sofort bewegt, wenn man dreht.
             if max_scroll > 0:
                 progress = self.info_scroll / max_scroll
             else:
                 progress = 0
 
-            # Begrenzen auf 1.0 (da wir durch den Trick evtl. etwas weiter drehen können)
             progress = min(progress, 1.0)
 
             available_height = Config.HEIGHT - sb_h
@@ -383,7 +395,8 @@ def main():
         serial = i2c(port=1, address=Config.I2C_ADDR)
         device = sh1106(serial, width=Config.WIDTH, height=Config.HEIGHT)
         encoder = RotaryEncoder(Config.PIN_CLK, Config.PIN_DT, max_steps=1)
-        button = Button(Config.PIN_SW, pull_up=True, bounce_time=Config.BOUNCE_TIME)
+        # HIER WURDE Config.BOUNCE_TIME auf 0.3 gesetzt, falls du es nicht schon hast
+        button = Button(Config.PIN_SW, pull_up=True, bounce_time=0.3)
     except Exception as e:
         print(f"Hardware Error: {e}")
         return
@@ -393,7 +406,7 @@ def main():
     monitor = SystemMonitor()
     controller = MenuController(device, res_mgr, monitor)
 
-    monitor.start()  # Startet den Hintergrund-Thread für API calls
+    monitor.start()  # Startet den Hintergrund-Thread für Shared Memory Lese-Vorgänge
 
     # Input Callbacks
     def on_cw():
