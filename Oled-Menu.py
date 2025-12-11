@@ -174,7 +174,7 @@ class MenuController:
 
     def load_info_text(self):
         try:
-            txt = Path("info.txt").read_text(encoding="utf-8")
+            txt = Path("menu-icons/menu-info.txt").read_text(encoding="utf-8")
         except FileNotFoundError:
             txt = "Info.txt fehlt."
         self.info_lines = textwrap.wrap(txt, width=18)

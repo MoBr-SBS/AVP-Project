@@ -1,4 +1,3 @@
-Made by Moritz Brendel. . .
-
+Made by Moritz Brendel
 Github:
 https://github.com/MB-SHS/AVP-Project
