@@ -8,7 +8,6 @@
 _Diese Aufgaben sind essenziell für die Grundfunktionalität._
 
 ### Backend & Logik
-- [ ] Screenvariablen-Übergabe per RAM-JSON statt HTTP-API
 - [ ] Unterscheiden zwischen normalen Nutzern und Admin-Nutzer
 - [ ] Passwortänderung / Neuanlage von Nutzern erlauben
 
@@ -36,6 +35,7 @@ _Ideen, Features und Verbesserungen, die umgesetzt werden, wenn Zeit ist oder di
 - [x] Projekt initialisiert
 - [x] Hardware und Verkabelung geplant
 - [x] Hardware konstruiert und ausgedruckt
+- [x] Screenvariablen-Übergabe per RAM-JSON statt HTTP-API
 
 
 </details>
