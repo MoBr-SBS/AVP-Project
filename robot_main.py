@@ -130,7 +130,6 @@ async def websocket_handler(request):
     """Verwaltet die Echtzeit-Verbindung für Login und Steuerung."""
     global client_connected, current_pan, current_tilt, client_ip, client_name
 
-    # Heartbeat aktiviert Keep-Alive Pings, um Verbindungsabbrüche schneller zu erkennen
     ws = web.WebSocketResponse(heartbeat=10.0)
     await ws.prepare(request)
 
@@ -138,70 +137,94 @@ async def websocket_handler(request):
     current_user_ip = request.remote
     host = request.host.split(':')[0]
 
-    async for msg in ws:
-        if msg.type == web.WSMsgType.TEXT:
-            try:
-                data = json.loads(msg.data)
+    # Optional: Loggen, dass sich technisch jemand verbunden hat (noch ohne Login)
+    # print(f"[NET] Neue WebSocket-Verbindung von {current_user_ip}")
 
-                # --- Sektion 1: Login ---
-                if 'type' in data and data['type'] == 'login':
-                    users = load_users()
-                    user = data.get('user')
-                    pw = data.get('pass')
+    try:
+        async for msg in ws:
+            if msg.type == web.WSMsgType.TEXT:
+                try:
+                    data = json.loads(msg.data)
 
-                    if user in users and verify_password(users[user], pw):
-                        # Erfolgreicher Login
-                        authenticated = True
-                        client_connected = True
-                        client_ip = current_user_ip
-                        client_name = user
+                    # --- Sektion 1: Login ---
+                    if 'type' in data and data['type'] == 'login':
 
-                        write_status()  # Display sofort aktualisieren
+                        # 1. Daten extrahieren (noch nichts prüfen)
+                        attempt_user = data.get('user', 'Unbekannt')
 
-                        # Token-basierte URL für den gesicherten Videostream generieren
-                        auth_stream_url = f"http://{host}:1984/stream.html?src=cam&mode=webrtc&token={Config.CAM_TOKEN}"
+                        # LOG: Zeige JEDEN Versuch an
+                        print(f"[AUTH] Login-Versuch | User: '{attempt_user}' | IP: {current_user_ip}")
 
-                        print(f"Login erfolgreich: {user} ({client_ip})")
-                        await ws.send_json({
-                            "type": "login_success",
-                            "user": user,
-                            "stream_url": auth_stream_url
-                        })
-                    else:
-                        print(f"Login fehlgeschlagen: {user}")
-                        # Kurze Verzögerung zur Erschwerung von Brute-Force-Angriffen
-                        await asyncio.sleep(1)
-                        await ws.send_json({"type": "login_fail"})
+                        # 2. Prüfen: Ist schon besetzt?
+                        if client_connected:
+                            print(f"[AUTH] Abgelehnt: System ist bereits belegt durch '{client_name}'")
+                            await ws.send_json({
+                                "type": "login_fail",
+                                "message": "System ist belegt!"
+                            })
+                            continue  # Abbruch
 
-                # --- Sektion 2: Steuerung (Nur authentifiziert) ---
-                elif authenticated:
-                    if 'pan' in data and 'tilt' in data:
-                        pan = float(data['pan'])
-                        tilt = float(data['tilt'])
+                        # 3. Prüfen: Passwort
+                        users = load_users()
+                        pw = data.get('pass')
 
-                        # Wertebereich begrenzen (Clamping), um Hardware-Schäden zu vermeiden
-                        pan = max(0, min(180, pan))
-                        tilt = max(0, min(180, tilt))
+                        if attempt_user in users and verify_password(users[attempt_user], pw):
+                            # ERFOLG
+                            authenticated = True
+                            client_connected = True
+                            client_ip = current_user_ip
+                            client_name = attempt_user
 
-                        current_pan = pan
-                        current_tilt = tilt
+                            write_status()  # Display Update
 
-                        if kit:
-                            kit.servo[Config.PAN_CHANNEL].angle = pan
-                            kit.servo[Config.TILT_CHANNEL].angle = tilt
+                            auth_stream_url = f"http://{host}:1984/stream.html?src=cam&mode=webrtc&token={Config.CAM_TOKEN}"
 
-                        write_status()  # Neuen Winkel an Display melden
+                            print(f"[AUTH] Login erfolgreich! | User: '{client_name}'")
 
-            except Exception as e:
-                print(f"WebSocket-Fehler: {e}")
+                            await ws.send_json({
+                                "type": "login_success",
+                                "user": attempt_user,
+                                "stream_url": auth_stream_url
+                            })
+                        else:
+                            # FEHLSCHLAG (Falsche Daten)
+                            print(f"[AUTH] Login fehlgeschlagen: Falsches Passwort oder User für '{attempt_user}'")
+                            await asyncio.sleep(1)  # Brute-Force Bremse
+                            await ws.send_json({"type": "login_fail"})
 
-    # --- Verbindung getrennt ---
-    print("Verbindung geschlossen")
-    if authenticated:
-        client_connected = False
-        client_name = "Niemand"
-        client_ip = "N/A"
-        write_status()
+                    # --- Sektion 2: Steuerung ---
+                    elif authenticated:
+                        if 'pan' in data and 'tilt' in data:
+                            pan = float(data['pan'])
+                            tilt = float(data['tilt'])
+
+                            pan = max(0, min(180, pan))
+                            tilt = max(0, min(180, tilt))
+
+                            current_pan = pan
+                            current_tilt = tilt
+
+                            if kit:
+                                kit.servo[Config.PAN_CHANNEL].angle = pan
+                                kit.servo[Config.TILT_CHANNEL].angle = tilt
+
+                            write_status()
+
+                except Exception as e:
+                    print(f"[ERR] Fehler bei Nachrichtenverarbeitung: {e}")
+
+    finally:
+        # --- Aufräumen ---
+        if authenticated:
+            print(f"[SYS] Verbindung getrennt. User '{client_name}' ausgeloggt. System frei.")
+            client_connected = False
+            client_name = "Niemand"
+            client_ip = "N/A"
+            write_status()
+        else:
+            # Wenn jemand ohne Login das Fenster schließt
+            # print(f"[NET] WebSocket getrennt (ohne Login) von {current_user_ip}")
+            pass
 
     return ws
 

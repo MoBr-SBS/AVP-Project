@@ -166,13 +166,16 @@
             const u = document.getElementById('userInput').value;
             const p = document.getElementById('passInput').value;
 
+            // Error-Box erst mal ausblenden, neuer Versuch
+            document.getElementById('loginError').style.display = 'none';
+
             if(ws.readyState === WebSocket.OPEN) {
-                // Sende Login-Daten an Python
                 ws.send(JSON.stringify({ type: 'login', user: u, pass: p }));
+            } else {
+                alert("Keine Verbindung zum Server! Bitte Seite neu laden.");
             }
         }
 
-        // Enter-Taste im Passwortfeld löst Login aus
         document.getElementById('passInput').addEventListener('keypress', function (e) {
             if (e.key === 'Enter') performLogin();
         });
@@ -182,42 +185,54 @@
             const data = JSON.parse(event.data);
 
             if (data.type === 'login_success') {
-                // 1. Login Overlay ausblenden
                 document.getElementById('loginOverlay').style.display = 'none';
-
-                // 2. Stream laden (Server schickt uns die URL inkl. Passwort!)
                 if (data.stream_url) {
                     document.getElementById('camStream').src = data.stream_url;
                 }
-
-                // 3. UI Updates
                 document.getElementById('displayUser').innerText = data.user;
                 isLoggedIn = true;
                 statusEl.innerText = "Verbunden";
                 statusEl.style.color = "#0f0";
+
             } else if (data.type === 'login_fail') {
                 const errBox = document.getElementById('loginError');
+
+                // HIER IST DIE WICHTIGE ÄNDERUNG:
+                // Wir prüfen, ob der Server eine spezielle Nachricht geschickt hat.
+                // Dein Python-Script sendet z.B. "System ist belegt!" oder gar nichts (bei falschem PW).
+                if (data.message) {
+                    errBox.innerText = data.message;
+                } else {
+                    errBox.innerText = "Zugangsdaten falsch!";
+                }
+
                 errBox.style.display = 'block';
-                // Wackeleffekt
-                document.querySelector('.login-box').style.animation = "shake 0.5s";
-                setTimeout(() => document.querySelector('.login-box').style.animation = "", 500);
+
+                // Animation neu triggern
+                const box = document.querySelector('.login-box');
+                box.style.animation = 'none';
+                box.offsetHeight; /* Trigger reflow */
+                box.style.animation = "shake 0.5s";
             }
         };
 
         ws.onclose = () => {
             statusEl.innerText = "Getrennt";
             statusEl.style.color = "#f00";
-
-            // Bei Verbindungsverlust: Overlay wieder zeigen & Stream beenden
             document.getElementById('loginOverlay').style.display = 'flex';
             document.getElementById('camStream').src = "";
+
+            // Optional: Reset des Error-Textes für den nächsten Versuch
+            document.getElementById('loginError').innerText = "Verbindung verloren.";
+            document.getElementById('loginError').style.display = 'block';
+
             isLoggedIn = false;
         };
 
-        // --- SENDE FUNKTION (Nur wenn eingeloggt) ---
+        // --- SENDE FUNKTION (unverändert) ---
         let lastSend = 0;
         function sendAngles(pan, tilt) {
-            if (!isLoggedIn) return; // Sicherheitssperre
+            if (!isLoggedIn) return;
 
             pan = Math.max(0, Math.min(180, pan));
             tilt = Math.max(0, Math.min(180, tilt));
@@ -233,7 +248,7 @@
             }
         }
 
-        // --- STEUERUNG (Maus & Joystick) ---
+        // --- STEUERUNG (unverändert) ---
         const mouseZone = document.getElementById('mouseZone');
         const joystickWrapper = document.getElementById('joystick-wrapper');
         const instructionText = document.getElementById('instructionText');
