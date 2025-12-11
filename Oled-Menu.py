@@ -21,7 +21,7 @@ class Config:
     PIN_DT = 18
     PIN_SW = 27
     I2C_ADDR = 0x3C
-    BOUNCE_TIME = 0.05
+    BOUNCE_TIME = 0.01
 
     # Display
     WIDTH = 128
@@ -396,7 +396,7 @@ def main():
         device = sh1106(serial, width=Config.WIDTH, height=Config.HEIGHT)
         encoder = RotaryEncoder(Config.PIN_CLK, Config.PIN_DT, max_steps=1)
         # HIER WURDE Config.BOUNCE_TIME auf 0.3 gesetzt, falls du es nicht schon hast
-        button = Button(Config.PIN_SW, pull_up=True, bounce_time=0.3)
+        button = Button(Config.PIN_SW, pull_up=True, bounce_time=Config.BOUNCE_TIME)
     except Exception as e:
         print(f"Hardware Error: {e}")
         return
