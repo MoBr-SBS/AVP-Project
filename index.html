@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Robot Control Interface</title>
+    <title>Robot Control Interface - Unified</title>
     <style>
         body {
             font-family: 'Segoe UI', sans-serif;
@@ -17,143 +17,203 @@
             overflow: hidden;
         }
 
-        /* --- LOGIN OVERLAY (100% Blickdicht) --- */
-        #loginOverlay {
+        /* --- HEADER --- */
+        header {
+            width: 100%;
+            height: 60px;
+            background-color: #222;
+            border-bottom: 1px solid #444;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0 20px;
+            box-sizing: border-box;
+            z-index: 100;
+        }
+
+        .header-left {
+            display: flex;
+            align-items: center;
+            cursor: pointer;
+        }
+
+        .logo-placeholder {
+            width: 32px; height: 32px;
+            background: #444; border-radius: 50%;
+            margin-right: 15px;
+            display: flex; align-items: center; justify-content: center;
+            font-weight: bold; font-size: 0.8rem;
+        }
+
+        .header-title { font-weight: bold; font-size: 1.2rem; }
+
+        .settings-btn {
+            background: none; border: 1px solid #555;
+            color: #ddd; padding: 6px 12px;
+            border-radius: 4px; cursor: pointer;
+            transition: all 0.2s;
+        }
+        .settings-btn:hover { background: #333; border-color: #777; }
+
+
+        /* --- OVERLAYS --- */
+        .overlay {
             position: fixed;
             top: 0; left: 0; right: 0; bottom: 0;
-            background-color: #111; /* Vollständig deckend */
-            z-index: 9999; /* Ganz oben */
+            background-color: rgba(17, 17, 17, 0.95);
+            z-index: 9999;
             display: flex;
-            flex-direction: column;
             justify-content: center;
             align-items: center;
         }
 
-        .login-box {
+        .box {
             background: #222;
-            padding: 40px;
+            padding: 30px;
             border-radius: 12px;
             border: 1px solid #444;
             text-align: center;
-            width: 300px;
+            width: 320px;
             box-shadow: 0 10px 30px rgba(0,0,0,0.8);
+            position: relative;
         }
 
-        .login-box h2 { margin-top: 0; color: #fff; }
+        .close-icon {
+            position: absolute; top: 10px; right: 15px;
+            font-size: 1.5rem; cursor: pointer; color: #666;
+        }
+        .close-icon:hover { color: #fff; }
 
-        .login-box input {
-            width: 100%;
-            padding: 12px;
-            margin: 10px 0;
-            background: #333;
-            border: 1px solid #555;
-            color: white;
-            border-radius: 4px;
-            box-sizing: border-box;
-            font-size: 1rem;
+        .box h2 { margin-top: 0; color: #fff; margin-bottom: 20px; }
+
+        .box input {
+            width: 100%; padding: 10px; margin: 8px 0;
+            background: #333; border: 1px solid #555;
+            color: white; border-radius: 4px; box-sizing: border-box;
         }
 
-        .login-box button {
-            width: 100%;
-            padding: 12px;
-            margin-top: 10px;
-            background: #007bff;
-            color: white;
-            border: none;
-            border-radius: 4px;
-            cursor: pointer;
-            font-size: 1rem;
-            font-weight: bold;
-            transition: background 0.2s;
+        .box button {
+            width: 100%; padding: 10px; margin-top: 15px;
+            background: #007bff; color: white; border: none;
+            border-radius: 4px; cursor: pointer; font-weight: bold;
         }
-        .login-box button:hover { background: #0056b3; }
+        .box button:hover { background: #0056b3; }
+        .box button.secondary { background: #444; margin-top: 10px; }
 
-        .error-msg {
-            color: #ff5555;
-            margin-top: 15px;
-            display: none;
-            font-size: 0.9rem;
-            background: rgba(255,0,0,0.1);
-            padding: 5px;
-            border-radius: 4px;
+        .msg-box {
+            margin-top: 15px; font-size: 0.9rem; padding: 5px;
+            border-radius: 4px; display: none;
         }
+        .error { color: #ff5555; background: rgba(255,0,0,0.1); }
+        .success { color: #55ff55; background: rgba(0,255,0,0.1); }
 
 
         /* --- HAUPT INTERFACE --- */
-        h2.main-title { margin: 10px; }
+        .main-content {
+            display: flex; flex-direction: column; align-items: center;
+            width: 100%; flex: 1; justify-content: center;
+            padding-bottom: 20px;
+        }
 
         .video-container {
-            width: 100%; max-width: 1280px; aspect-ratio: 16/9;
-            background: #000; border: 2px solid #333; position: relative; user-select: none;
+            width: 90%; max-width: 1000px; aspect-ratio: 16/9;
+            background: #000; border: 2px solid #333; position: relative;
         }
         iframe { width: 100%; height: 100%; border: none; pointer-events: none; }
 
         .control-layer {
             position: absolute; top: 0; left: 0; right: 0; bottom: 0;
-            z-index: 10; cursor: crosshair; display: block;
+            z-index: 10; cursor: crosshair;
         }
 
-        .ui-panel {
+        .status-panel {
             margin-top: 15px; display: flex; gap: 30px;
-            align-items: flex-start; background: #222;
-            padding: 15px 25px; border-radius: 8px;
+            background: #222; padding: 10px 25px; border-radius: 8px;
+            border: 1px solid #333; font-size: 0.9rem;
         }
-        .mode-switch label { cursor: pointer; display: block; margin-bottom: 5px; }
-        .info-group { border-left: 1px solid #444; padding-left: 20px; }
 
-        /* Joystick Styles */
+        /* Joystick Styles - Jetzt immer sichtbar */
         #joystick-wrapper {
-            margin-top: 20px; display: none; position: relative;
-            width: 200px; height: 200px;
-            background: rgba(255, 255, 255, 0.1);
-            border-radius: 50%; border: 2px solid #555; touch-action: none;
+            margin-top: 25px; position: relative;
+            width: 140px; height: 140px;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 50%; border: 2px solid #444;
+            touch-action: none;
         }
         #joystick-knob {
-            width: 60px; height: 60px; background: #007bff;
+            width: 50px; height: 50px; background: #007bff;
             border-radius: 50%; position: absolute;
             top: 50%; left: 50%; transform: translate(-50%, -50%);
-            cursor: grab;
+            box-shadow: 0 0 15px rgba(0, 123, 255, 0.4);
+        }
+
+        .hint {
+            margin-top: 15px; color: #666; font-size: 0.8rem;
+            text-align: center; line-height: 1.4;
         }
     </style>
 </head>
 <body>
 
-    <div id="loginOverlay">
-        <div class="login-box">
+    <header>
+        <div class="header-left" onclick="closeSettings()">
+            <div class="logo-placeholder">RB</div>
+            <div class="header-title">Robot Control v2</div>
+        </div>
+        <div>
+            <button class="settings-btn" onclick="openSettings()">User Settings</button>
+        </div>
+    </header>
+
+    <div id="loginOverlay" class="overlay">
+        <div class="box login-box">
             <h2>System Login</h2>
             <input type="text" id="userInput" placeholder="Benutzername" autocomplete="off">
             <input type="password" id="passInput" placeholder="Passwort">
             <button onclick="performLogin()">Verbinden</button>
-            <div class="error-msg" id="loginError">Zugangsdaten falsch!</div>
+            <div class="msg-box error" id="loginError"></div>
         </div>
     </div>
 
-    <h2 class="main-title">Roboter Steuerung v2</h2>
+    <div id="settingsOverlay" class="overlay" style="display: none;">
+        <div class="box">
+            <span class="close-icon" onclick="closeSettings()">&times;</span>
+            <h2>Passwort ändern</h2>
+            <input type="password" id="oldPass" placeholder="Altes Passwort">
+            <input type="password" id="newPass" placeholder="Neues Passwort">
+            <input type="password" id="newPassRepeat" placeholder="Neues Passwort wiederholen">
 
-    <div class="video-container">
-        <div class="control-layer" id="mouseZone"></div>
-        <iframe id="camStream" src=""></iframe>
-    </div>
+            <button onclick="changePassword()">Speichern</button>
+            <button class="secondary" onclick="closeSettings()">Abbrechen</button>
 
-    <div class="ui-panel">
-        <div class="mode-switch">
-            <div style="margin-bottom:5px; color:#aaa; font-size:0.8rem;">STEUERUNG</div>
-            <label><input type="radio" name="controlMode" value="mouse" checked onchange="setMode('mouse')"> Maus</label>
-            <label><input type="radio" name="controlMode" value="joystick" onchange="setMode('joystick')"> Joystick</label>
-        </div>
-        <div class="info-group">
-            <div style="font-weight:bold;">Status: <span id="connectionStatus" style="color:red">Getrennt</span></div>
-            <div style="margin-top:5px;">User: <span id="displayUser">-</span></div>
+            <div class="msg-box error" id="settingsError"></div>
+            <div class="msg-box success" id="settingsSuccess">Passwort erfolgreich geändert!</div>
         </div>
     </div>
 
-    <div id="joystick-wrapper"><div id="joystick-knob"></div></div>
-    <p id="instructionText">Halte die linke Maustaste im Video gedrückt.</p>
+    <div class="main-content">
+        <div class="video-container">
+            <div class="control-layer" id="mouseZone"></div>
+            <iframe id="camStream" src=""></iframe>
+        </div>
+
+        <div class="status-panel">
+            <div>Status: <span id="connectionStatus" style="color:red">Getrennt</span></div>
+            <div>User: <span id="displayUser">-</span></div>
+        </div>
+
+        <div id="joystick-wrapper">
+            <div id="joystick-knob"></div>
+        </div>
+
+        <div class="hint">
+            Steuerung: Klicken & Ziehen im Video,<br>
+            Joystick benutzen oder Pfeiltasten verwenden.
+        </div>
+    </div>
 
     <script>
         const host = window.location.hostname;
-
-        // Globale Variablen
         let currentPan = 90;
         let currentTilt = 90;
         let isLoggedIn = false;
@@ -161,58 +221,61 @@
         const ws = new WebSocket(`ws://${host}:8080/ws`);
         const statusEl = document.getElementById('connectionStatus');
 
-        // --- LOGIN LOGIK ---
+        // --- UI FUNKTIONEN ---
+        function openSettings() {
+            if(!isLoggedIn) return;
+            document.getElementById('settingsOverlay').style.display = 'flex';
+            document.getElementById('oldPass').value = '';
+            document.getElementById('newPass').value = '';
+            document.getElementById('newPassRepeat').value = '';
+            document.getElementById('settingsError').style.display = 'none';
+            document.getElementById('settingsSuccess').style.display = 'none';
+        }
+
+        function closeSettings() {
+            document.getElementById('settingsOverlay').style.display = 'none';
+        }
+
+        // --- LOGIN ---
         function performLogin() {
             const u = document.getElementById('userInput').value;
             const p = document.getElementById('passInput').value;
-
-            // Error-Box erst mal ausblenden, neuer Versuch
-            document.getElementById('loginError').style.display = 'none';
-
             if(ws.readyState === WebSocket.OPEN) {
                 ws.send(JSON.stringify({ type: 'login', user: u, pass: p }));
-            } else {
-                alert("Keine Verbindung zum Server! Bitte Seite neu laden.");
             }
         }
 
-        document.getElementById('passInput').addEventListener('keypress', function (e) {
-            if (e.key === 'Enter') performLogin();
-        });
+        // --- PASSWORT ---
+        function changePassword() {
+            const oldP = document.getElementById('oldPass').value;
+            const newP = document.getElementById('newPass').value;
+            const repP = document.getElementById('newPassRepeat').value;
+            if (!oldP || !newP || newP !== repP || newP.length < 4) {
+                const errBox = document.getElementById('settingsError');
+                errBox.innerText = "Eingabe ungültig (Min. 4 Zeichen, Passwörter identisch)";
+                errBox.style.display = 'block';
+                return;
+            }
+            ws.send(JSON.stringify({ type: 'change_password', old_pass: oldP, new_pass: newP }));
+        }
 
-        // --- WEBSOCKET EVENT HANDLING ---
+        // --- WEBSOCKET HANDLING ---
         ws.onmessage = (event) => {
             const data = JSON.parse(event.data);
-
             if (data.type === 'login_success') {
                 document.getElementById('loginOverlay').style.display = 'none';
-                if (data.stream_url) {
-                    document.getElementById('camStream').src = data.stream_url;
-                }
+                if (data.stream_url) document.getElementById('camStream').src = data.stream_url;
                 document.getElementById('displayUser').innerText = data.user;
                 isLoggedIn = true;
                 statusEl.innerText = "Verbunden";
                 statusEl.style.color = "#0f0";
-
             } else if (data.type === 'login_fail') {
                 const errBox = document.getElementById('loginError');
-
-                // HIER IST DIE WICHTIGE ÄNDERUNG:
-                // Wir prüfen, ob der Server eine spezielle Nachricht geschickt hat.
-                // Dein Python-Script sendet z.B. "System ist belegt!" oder gar nichts (bei falschem PW).
-                if (data.message) {
-                    errBox.innerText = data.message;
-                } else {
-                    errBox.innerText = "Zugangsdaten falsch!";
-                }
-
+                errBox.innerText = data.message || "Login fehlgeschlagen";
                 errBox.style.display = 'block';
-
-                // Animation neu triggern
-                const box = document.querySelector('.login-box');
-                box.style.animation = 'none';
-                box.offsetHeight; /* Trigger reflow */
-                box.style.animation = "shake 0.5s";
+            } else if (data.type === 'pw_change_success') {
+                document.getElementById('settingsSuccess').style.display = 'block';
+                setTimeout(closeSettings, 2000);
             }
         };
 
@@ -220,108 +283,118 @@
             statusEl.innerText = "Getrennt";
             statusEl.style.color = "#f00";
             document.getElementById('loginOverlay').style.display = 'flex';
-            document.getElementById('camStream').src = "";
-
-            // Optional: Reset des Error-Textes für den nächsten Versuch
-            document.getElementById('loginError').innerText = "Verbindung verloren.";
-            document.getElementById('loginError').style.display = 'block';
-
             isLoggedIn = false;
         };
 
-        // --- SENDE FUNKTION (unverändert) ---
+        // --- UNIFIZIERTE STEUERUNG ---
         let lastSend = 0;
         function sendAngles(pan, tilt) {
             if (!isLoggedIn) return;
-
+            // Werte begrenzen
             pan = Math.max(0, Math.min(180, pan));
             tilt = Math.max(0, Math.min(180, tilt));
-            currentPan = pan;
-            currentTilt = tilt;
+
+            currentPan = pan; currentTilt = tilt;
 
             const now = Date.now();
-            if (now - lastSend < 40) return;
+            if (now - lastSend < 40) return; // Rate Limiting 25fps
             lastSend = now;
 
             if (ws.readyState === WebSocket.OPEN) {
-                ws.send(JSON.stringify({ pan: pan, tilt: tilt }));
+                ws.send(JSON.stringify({ pan, tilt }));
             }
         }
 
-        // --- STEUERUNG (unverändert) ---
+        // 1. MAUS-STEUERUNG (Video)
         const mouseZone = document.getElementById('mouseZone');
-        const joystickWrapper = document.getElementById('joystick-wrapper');
-        const instructionText = document.getElementById('instructionText');
-        const knob = document.getElementById('joystick-knob');
-        let currentMode = 'mouse';
-        let isDraggingJoystick = false;
-        let joyX = 0, joyY = 0;
-        const keyState = { ArrowUp: false, ArrowDown: false, ArrowLeft: false, ArrowRight: false };
-
-        function setMode(mode) {
-            currentMode = mode;
-            if (mode === 'mouse') {
-                mouseZone.style.display = 'block';
-                joystickWrapper.style.display = 'none';
-                instructionText.innerText = "Halte die linke Maustaste im Video gedrückt.";
-            } else {
-                mouseZone.style.display = 'none';
-                joystickWrapper.style.display = 'block';
-                instructionText.innerText = "Benutze Joystick oder Pfeiltasten.";
-            }
-        }
-
         mouseZone.addEventListener('mousemove', (e) => {
             if (e.buttons !== 1) return;
             const rect = mouseZone.getBoundingClientRect();
-            const panPct = (e.clientX - rect.left) / rect.width;
-            const tiltPct = (e.clientY - rect.top) / rect.height;
-            sendAngles(180 - (panPct * 180), 180 - (tiltPct * 180));
+            // Umrechnung Position zu Grad
+            const p = 180 - ((e.clientX - rect.left) / rect.width * 180);
+            const t = 180 - ((e.clientY - rect.top) / rect.height * 180);
+            sendAngles(p, t);
         });
         mouseZone.addEventListener('dragstart', (e) => e.preventDefault());
 
+        // 2. JOYSTICK & TASTATUR LOGIK
+        const joystickWrapper = document.getElementById('joystick-wrapper');
+        const knob = document.getElementById('joystick-knob');
+        let isDraggingJoystick = false;
+        let joyX = 0, joyY = 0;
+        const keyState = {};
+
+        // Loop für kontinuierliche Bewegung (Joystick & Tasten)
         setInterval(() => {
-            const isKeysActive = keyState.ArrowUp || keyState.ArrowDown || keyState.ArrowLeft || keyState.ArrowRight;
-            if (currentMode === 'joystick' && (isDraggingJoystick || isKeysActive)) {
-                let deltaPan = joyX * 4.0 * -1;
-                let deltaTilt = joyY * 4.0 * -1;
-                sendAngles(currentPan + deltaPan, currentTilt + deltaTilt);
+            if (!isLoggedIn) return;
+            if (isDraggingJoystick || Object.values(keyState).some(x => x)) {
+                // Geschwindigkeit der Bewegung (4 Grad pro Intervall)
+                sendAngles(currentPan + (joyX * 4 * -1), currentTilt + (joyY * 4 * -1));
             }
         }, 50);
 
+        // Tastatur Events
         window.addEventListener('keydown', (e) => {
             if(document.activeElement.tagName === 'INPUT') return;
-            if (keyState.hasOwnProperty(e.key)) { keyState[e.key] = true; updateJoy(); }
+            if(['ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.key)) {
+                keyState[e.key] = true;
+                updateFromKeys();
+            }
         });
         window.addEventListener('keyup', (e) => {
-            if (keyState.hasOwnProperty(e.key)) { keyState[e.key] = false; updateJoy(); }
+            if(['ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.key)) {
+                keyState[e.key] = false;
+                updateFromKeys();
+            }
         });
 
-        function updateJoy() {
-            if (isDraggingJoystick) return;
+        function updateFromKeys() {
+            if (isDraggingJoystick) return; // Joystick Hardware hat Vorrang
             joyX = (keyState.ArrowRight ? 1 : 0) - (keyState.ArrowLeft ? 1 : 0);
             joyY = (keyState.ArrowDown ? 1 : 0) - (keyState.ArrowUp ? 1 : 0);
-            knob.style.transform = `translate(calc(-50% + ${joyX*70}px), calc(-50% + ${joyY*70}px))`;
+            // Optisches Feedback am Joystick-Knopf
+            knob.style.transform = `translate(calc(-50% + ${joyX*35}px), calc(-50% + ${joyY*35}px))`;
         }
 
+        // Joystick Maus/Touch Events
         knob.addEventListener('mousedown', startJ); knob.addEventListener('touchstart', startJ);
-        window.addEventListener('mousemove', moveJ); window.addEventListener('touchmove', moveJ);
+        window.addEventListener('mousemove', moveJ); window.addEventListener('touchmove', moveJ, {passive: false});
         window.addEventListener('mouseup', endJ); window.addEventListener('touchend', endJ);
 
-        function startJ(e) { if(currentMode==='joystick'){ isDraggingJoystick=true; knob.style.transition='none'; e.preventDefault(); }}
+        function startJ(e) {
+            isDraggingJoystick = true;
+            knob.style.transition = 'none';
+            if(e.cancelable) e.preventDefault();
+        }
+
         function moveJ(e) {
             if(!isDraggingJoystick) return;
-            e.preventDefault();
-            let cX = e.touches ? e.touches[0].clientX : e.clientX;
-            let cY = e.touches ? e.touches[0].clientY : e.clientY;
-            let rect = joystickWrapper.getBoundingClientRect();
-            let dX = cX - (rect.left + rect.width/2), dY = cY - (rect.top + rect.height/2);
-            let dist = Math.sqrt(dX*dX + dY*dY);
-            if(dist > 70) { let ang = Math.atan2(dY, dX); dX = Math.cos(ang)*70; dY = Math.sin(ang)*70; }
-            knob.style.transform = `translate(calc(-50% + ${dX}px), calc(-50% + ${dY}px))`;
-            joyX = dX/70; joyY = dY/70;
+            const t = e.touches ? e.touches[0] : e;
+            const r = joystickWrapper.getBoundingClientRect();
+            let dx = t.clientX - (r.left + r.width/2);
+            let dy = t.clientY - (r.top + r.height/2);
+            const dist = Math.sqrt(dx*dx + dy*dy);
+            const maxRadius = 40;
+
+            if(dist > maxRadius) {
+                const angle = Math.atan2(dy, dx);
+                dx = Math.cos(angle) * maxRadius;
+                dy = Math.sin(angle) * maxRadius;
+            }
+
+            knob.style.transform = `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px))`;
+            joyX = dx / maxRadius;
+            joyY = dy / maxRadius;
+            if(e.cancelable) e.preventDefault();
         }
-        function endJ() { isDraggingJoystick=false; knob.style.transition='transform 0.1s'; knob.style.transform='translate(-50%,-50%)'; joyX=0; joyY=0; updateJoy(); }
+
+        function endJ() {
+            isDraggingJoystick = false;
+            knob.style.transition = 'transform 0.15s ease-out';
+            knob.style.transform = 'translate(-50%,-50%)';
+            joyX = 0; joyY = 0;
+            updateFromKeys(); // Falls noch Tasten gedrückt sind
+        }
     </script>
 </body>
 </html>
