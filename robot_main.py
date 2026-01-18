@@ -10,181 +10,205 @@ from aiohttp import web
 from adafruit_servokit import ServoKit
 
 
-# --- KONFIGURATION ---
-class Config:
-    PAN_CHANNEL = 10
-    TILT_CHANNEL = 11
-    SHM_FILE = "/dev/shm/robot_status.json"
-    CAM_TOKEN = "aB7dE9fG2hJ5kL8mN1pQ"
-    HOST = '0.0.0.0'
-    PORT = 8080
+# --- 1. KONFIGURATION LADEN ---
+def load_config():
+    try:
+        with open('config.json', 'r') as f:
+            return json.load(f)
+    except FileNotFoundError:
+        print("FEHLER: config.json nicht gefunden! Bitte erstelle die Datei.")
+        exit(1)
 
 
-# --- HARDWARE INITIALISIERUNG ---
+cfg = load_config()
+
+# --- 2. HARDWARE INITIALISIERUNG ---
 try:
     i2c = busio.I2C(board.SCL, board.SDA)
     kit = ServoKit(channels=16, i2c=i2c)
-    print("Hardware: Servo-Treiber erfolgreich initialisiert.")
+    print("[HW] Servo-Treiber erfolgreich initialisiert.")
 except Exception as e:
-    print(f"Hardware-Fehler: Servo-Treiber nicht gefunden ({e}). Simulationsmodus aktiv.")
+    print(f"[HW] FEHLER: Servo-Treiber nicht gefunden ({e}). Simulationsmodus aktiv.")
     kit = None
 
+# Globale Zustände
 current_pan = 90
 current_tilt = 90
 client_connected = False
-client_ip = "N/A"
 client_name = "Niemand"
-
-if kit:
-    kit.servo[Config.PAN_CHANNEL].angle = current_pan
-    kit.servo[Config.TILT_CHANNEL].angle = current_tilt
+client_ip = "N/A"  # --- ÄNDERUNG: Globale Variable für IP hinzugefügt
 
 
-# --- STATUS SCHREIBEN ---
-def write_status():
-    global current_pan, current_tilt, client_connected, client_ip, client_name
-    data = {
-        "pan": round(current_pan, 1),
-        "tilt": round(current_tilt, 1),
-        "connected": client_connected,
-        "client_ip": client_ip,
-        "client_name": client_name
-    }
+# --- 3. HELFER-FUNKTIONEN (Sicherheit & IP) ---
+
+def hash_password(password, salt=None):
+    if salt is None:
+        salt = secrets.token_hex(16)
+    # .strip() entfernt unsichtbare Leerzeichen oder Zeilenumbrüche
+    hashed = hashlib.sha256((salt + password.strip()).encode()).hexdigest()
+    return f"{salt}${hashed}"
+
+
+def verify_password(stored_password, provided_password):
     try:
-        tmp_file = Config.SHM_FILE + ".tmp"
-        with open(tmp_file, "w") as f:
-            json.dump(data, f)
-        os.replace(tmp_file, Config.SHM_FILE)
+        if not stored_password or '$' not in stored_password:
+            return False
+        salt, hashed = stored_password.split('$')
+        # Wir berechnen den Hash des eingegebenen Passworts mit dem alten Salt
+        new_hash = hash_password(provided_password, salt).split('$')[1]
+        return new_hash == hashed
     except Exception as e:
-        print(f"IPC-Fehler: {e}")
+        print(f"[DEBUG] Fehler in verify_password: {e}")
+        return False
 
 
-write_status()
-
-
-# --- USER MANAGEMENT ---
 def load_users():
     try:
-        with open('users.json', 'r') as f:
-            return json.load(f)
-    except:
+        with open(cfg['paths']['user_db'], 'r') as f:
+            data = json.load(f)
+            return data
+    except Exception as e:
+        print(f"[FEHLER] Konnte {cfg['paths']['user_db']} nicht laden: {e}")
         return {}
 
 
-def save_users(users_data):
+def save_users(users):
     try:
-        with open('users.json', 'w') as f:
-            json.dump(users_data, f, indent=4)
+        with open(cfg['paths']['user_db'], 'w') as f:
+            json.dump(users, f, indent=4)
         return True
     except:
         return False
 
 
-def hash_password(password):
-    salt = secrets.token_hex(16)
-    new_hash = hashlib.pbkdf2_hmac('sha256', password.encode('utf-8'), bytes.fromhex(salt), 100000)
-    return f"{salt}${new_hash.hex()}"
-
-
-def verify_password(stored_password, provided_password):
-    try:
-        salt, stored_hash = stored_password.split('$')
-        new_hash = hashlib.pbkdf2_hmac('sha256', provided_password.encode('utf-8'), bytes.fromhex(salt), 100000)
-        return secrets.compare_digest(new_hash.hex(), stored_hash)
-    except:
-        return False
-
-
-# --- NETZWERK-IP ERMITTLUNG ---
 def get_local_ips():
     ips = []
     try:
-        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        s.settimeout(0)
-        try:
-            s.connect(('10.254.254.254', 1))
-            ips.append(s.getsockname()[0])
-        except:
-            pass
-        finally:
-            s.close()
-        hostname = socket.gethostname()
-        for ip in socket.gethostbyname_ex(hostname)[2]:
-            if not ip.startswith("127.") and ip not in ips: ips.append(ip)
+        for interface in socket.getaddrinfo(socket.gethostname(), None):
+            ip = interface[4][0]
+            if "." in ip and not ip.startswith("127."):
+                if ip not in ips: ips.append(ip)
     except:
         pass
     return ips
 
 
-# --- WEBSOCKET HANDLER ---
-async def websocket_handler(request):
-    global client_connected, current_pan, current_tilt, client_ip, client_name
+# --- 4. SERVO LOGIK MIT REVERSE & LIMITS ---
 
-    ws = web.WebSocketResponse(heartbeat=10.0)
+def set_servo_angle(axis, angle):
+    s_cfg = cfg['hardware'][axis]
+
+    # Limits einhalten
+    angle = max(s_cfg['min_angle'], min(s_cfg['max_angle'], angle))
+
+    # Reverse Logik
+    actual_angle = (180 - angle) if s_cfg['reverse'] else angle
+
+    if kit:
+        try:
+            kit.servo[s_cfg['channel']].angle = actual_angle
+        except Exception as e:
+            print(f"[HW] Servo Fehler {axis}: {e}")
+
+    return angle
+
+
+def write_status():
+    # Wir formatieren die Zahlen hier explizit als Strings mit einer Nachkommastelle,
+    # damit in der JSON-Datei keine Fließkomma-Fehler entstehen.
+    status = {
+        "pan": f"{float(current_pan):.1f}",
+        "tilt": f"{float(current_tilt):.1f}",
+        "client_connected": client_connected,
+        "client_name": client_name,
+        "client_ip": client_ip
+    }
+    try:
+        with open(cfg['paths']['shm_file'], 'w') as f:
+            json.dump(status, f)
+    except Exception as e:
+        print(f"[SYS] Fehler beim Schreiben der Status-Datei: {e}")
+
+
+# --- 5. WEBSOCKET HANDLER ---
+
+async def websocket_handler(request):
+    # --- ÄNDERUNG: client_ip als global markieren
+    global current_pan, current_tilt, client_connected, client_name, client_ip
+
+    client_ip = request.remote
+    print(f"[SYS] Neue WebSocket-Verbindung: {client_ip}")
+
+    ws = web.WebSocketResponse()
     await ws.prepare(request)
 
-    remote_addr = request.remote
-    print(f"[SYS] Neue Verbindung von IP: {remote_addr}")
-
     authenticated = False
-    this_session_user = None
+    this_session_user = "Unbekannt"
 
     try:
         async for msg in ws:
             if msg.type == web.WSMsgType.TEXT:
                 data = json.loads(msg.data)
+                msg_type = data.get('type')
 
-                if data.get('type') == 'login':
-                    attempt_user = data.get('user', 'Unbekannt')
-
-                    # FEHLER: System belegt
-                    if client_connected:
-                        print(
-                            f"[AUTH] Login-Versuch abgelehnt: System belegt durch '{client_name}' (IP: {remote_addr})")
-                        await ws.send_json({"type": "login_fail", "message": "System belegt!"})
-                        continue
-
+                # LOGIN
+                if msg_type == 'login':
                     users = load_users()
-                    if attempt_user in users and verify_password(users[attempt_user], data.get('pass')):
-                        # ERFOLG: Login korrekt
-                        authenticated = True
-                        client_connected = True
-                        client_ip = remote_addr
-                        client_name = attempt_user
-                        this_session_user = attempt_user
-                        write_status()
+                    u = str(data.get('user', '')).strip()
+                    p = str(data.get('pass', '')).strip()
 
-                        host_header = request.host.split(':')[0]
-                        auth_url = f"http://{host_header}:1984/stream.html?src=cam&mode=webrtc&token={Config.CAM_TOKEN}"
-                        print(f"[AUTH] User '{client_name}' angemeldet (IP: {remote_addr})")
-                        await ws.send_json({"type": "login_success", "user": attempt_user, "stream_url": auth_url})
-                    else:
-                        # FEHLER: Falsche Daten
-                        print(f"[AUTH] FEHLER: Falsches Passwort/User für '{attempt_user}' (IP: {remote_addr})")
-                        await asyncio.sleep(1)  # Schutz gegen Brute-Force
-                        await ws.send_json({"type": "login_fail", "message": "Login-Daten ungültig"})
+                    print(f"[AUTH] Login-Versuch für User: '{u}' | {client_ip}")
 
-                elif authenticated:
-                    if 'pan' in data and 'tilt' in data:
-                        current_pan = max(0, min(180, float(data['pan'])))
-                        current_tilt = max(0, min(180, float(data['tilt'])))
-                        if kit:
-                            kit.servo[Config.PAN_CHANNEL].angle = current_pan
-                            kit.servo[Config.TILT_CHANNEL].angle = current_tilt
-                        write_status()
+                    if u in users:
+                        print(f"[AUTH] User '{u}' gefunden. Prüfe Passwort...")
+                        if verify_password(users[u], p):
+                            authenticated = True
+                            this_session_user = u
 
-                    elif data.get('type') == 'change_password':
-                        users = load_users()
-                        if verify_password(users[this_session_user], data.get('old_pass')):
-                            users[this_session_user] = hash_password(data.get('new_pass'))
-                            if save_users(users):
-                                print(f"[SYS] Passwort geändert für User '{this_session_user}'")
-                                await ws.send_json({"type": "pw_change_success"})
+                            client_connected = True
+                            client_name = u
+
+                            print(f"[AUTH] LOGIN ERFOLGREICH: User '{u}' | {client_ip}")
+
+                            server_ip = request.host.split(':')[0]
+                            stream_name = "cam"  # Dein Stream-Name aus der go2rtc.yaml
+                            target_url = f"http://{server_ip}:1984/stream.html?src={stream_name}"
+
+                            await ws.send_json({
+                                "type": "login_success",
+                                "user": u,
+                                "stream_url": target_url
+                            })
+
+                            write_status()
                         else:
-                            await ws.send_json({"type": "pw_change_fail", "message": "Altes Passwort falsch!"})
+                            print(f"[AUTH] PASSWORT FALSCH für '{u}'")
+                            await ws.send_json({"type": "login_fail", "message": "Passwort falsch"})
+                    else:
+                        print(f"[AUTH] USER NICHT GEFUNDEN: '{u}'")
+                        print(f"[DEBUG] Vorhandene User in Datei: {list(users.keys())}")
+                        await ws.send_json({"type": "login_fail", "message": "Nutzer unbekannt"})
+
+                # STEUERUNG
+                elif authenticated and 'pan' in data and 'tilt' in data:
+                    current_pan = set_servo_angle('pan', data['pan'])
+                    current_tilt = set_servo_angle('tilt', data['tilt'])
+                    write_status()
+
+                # PASSWORT ÄNDERN
+                elif authenticated and msg_type == 'change_password':
+                    users = load_users()
+                    if verify_password(users[this_session_user], data.get('old_pass')):
+                        users[this_session_user] = hash_password(data.get('new_pass'))
+                        if save_users(users):
+                            await ws.send_json({"type": "pw_change_success"})
+                    else:
+                        await ws.send_json({"type": "pw_change_fail", "message": "Falsches Passwort"})
+
     finally:
-        if authenticated and client_name == this_session_user:
-            print(f"[SYS] Logout: User '{client_name}' hat die Verbindung getrennt.")
+        if authenticated:
+            # --- ÄNDERUNG: IP beim Logout anzeigen und zurücksetzen
+            print(f"[SYS] Logout: User '{client_name}' ({client_ip}) hat getrennt.")
             client_connected = False
             client_name = "Niemand"
             client_ip = "N/A"
@@ -192,30 +216,30 @@ async def websocket_handler(request):
     return ws
 
 
+# --- 6. SERVER START ---
+
 async def index(request):
-    # Lädt die HTML-Datei aus dem templates-Ordner
     return web.FileResponse('./templates/index.html')
 
+
 app = web.Application()
-# WICHTIG: Erlaubt dem Browser Zugriff auf CSS und JS im static-Ordner
 app.router.add_static('/static/', path='./static', name='static')
 app.router.add_get('/', index)
 app.router.add_get('/ws', websocket_handler)
 
 if __name__ == '__main__':
+    host = cfg['network']['host']
+    port = cfg['network']['port']
     local_ips = get_local_ips()
+
     print("-" * 50)
-    print(f"ROBOTER-SERVER GESTARTET (Port {Config.PORT})")
-    if local_ips:
-        print("Erreichbar unter:")
-        for ip in local_ips: print(f"  > http://{ip}:{Config.PORT}")
-    else:
-        print(f"  > http://localhost:{Config.PORT}")
+    print(f"ROBOTER-SERVER GESTARTET auf Port {port}")
+    for ip in local_ips:
+        print(f"  > http://{ip}:{port}")
     print("-" * 50)
 
-    try:
-        web.run_app(app, host=Config.HOST, port=Config.PORT, print=None)
-    finally:
-        if kit:
-            kit.servo[Config.PAN_CHANNEL].angle = 90
-            kit.servo[Config.TILT_CHANNEL].angle = 90
+    # Servos in Startposition
+    current_pan = set_servo_angle('pan', 90)
+    current_tilt = set_servo_angle('tilt', 90)
+
+    web.run_app(app, host=host, port=port)

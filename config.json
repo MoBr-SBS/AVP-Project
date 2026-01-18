@@ -1,0 +1,34 @@
+{
+    "paths": {
+        "user_db": "users.json",
+        "shm_file": "/dev/shm/robot_status.json"
+    },
+    "oled": {
+        "address": "0x3C",
+        "pin_clk": 17,
+        "pin_dt": 18,
+        "pin_sw": 27,
+        "bounce_time": 0.3
+    },
+    "network": {
+        "host": "0.0.0.0",
+        "port": 8080
+    },
+    "security": {
+        "cam_token": "aB7dE9fG2hJ5kL8mN1pQ"
+    },
+    "hardware": {
+        "pan": {
+            "channel": 10,
+            "reverse": false,
+            "min_angle": 0,
+            "max_angle": 180
+        },
+        "tilt": {
+            "channel": 11,
+            "reverse": false,
+            "min_angle": 0,
+            "max_angle": 180
+        }
+    }
+}
