@@ -193,10 +193,12 @@ async def websocket_handler(request):
 
 
 async def index(request):
-    return web.FileResponse('./index.html')
-
+    # Lädt die HTML-Datei aus dem templates-Ordner
+    return web.FileResponse('./templates/index.html')
 
 app = web.Application()
+# WICHTIG: Erlaubt dem Browser Zugriff auf CSS und JS im static-Ordner
+app.router.add_static('/static/', path='./static', name='static')
 app.router.add_get('/', index)
 app.router.add_get('/ws', websocket_handler)
 

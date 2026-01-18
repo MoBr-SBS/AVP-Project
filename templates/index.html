@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Robot Control v2</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+
+    <header class="main-header">
+        <div class="header-left">
+            <div class="logo-placeholder">RB</div>
+            <div class="header-title">Robot Control v2</div>
+        </div>
+        <div class="header-right">
+            <button class="settings-btn" onclick="openSettings()">User Settings</button>
+        </div>
+    </header>
+
+    <div id="loginOverlay" class="overlay">
+        <div class="box login-box">
+            <h2>System Login</h2>
+            <input type="text" id="userInput" placeholder="Benutzername" autocomplete="off">
+            <input type="password" id="passInput" placeholder="Passwort">
+            <button onclick="performLogin()">Verbinden</button>
+        </div>
+    </div>
+
+    <div id="settingsOverlay" class="overlay" style="display: none;">
+        <div class="box">
+            <span class="close-icon" onclick="closeSettings()">&times;</span>
+            <h2>Einstellungen</h2>
+            <input type="password" id="oldPass" placeholder="Altes Passwort">
+            <input type="password" id="newPass" placeholder="Neues Passwort">
+            <button onclick="changePassword()">Speichern</button>
+            <button class="secondary" onclick="closeSettings()">Abbrechen</button>
+        </div>
+    </div>
+
+    <div class="main-content">
+        <div class="video-container">
+            <div class="control-layer" id="mouseZone"></div>
+            <iframe id="camStream" src=""></iframe>
+        </div>
+
+        <div class="status-panel">
+            <div>Status: <span id="connectionStatus" style="color:red">Getrennt</span></div>
+            <div>User: <span id="displayUser">-</span></div>
+        </div>
+
+        <div id="joystick-wrapper">
+            <div id="joystick-knob"></div>
+        </div>
+
+        <div class="hint">
+            Steuerung: Klicken & Ziehen im Video,<br>
+            Joystick benutzen oder Pfeiltasten verwenden.
+        </div>
+    </div>
+
+    <script src="/static/js/script.js"></script>
+</body>
+</html>
