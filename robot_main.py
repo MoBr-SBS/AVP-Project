@@ -122,20 +122,31 @@ def set_servo_angle(axis, angle):
     return angle
 
 
-def write_status():
+# --- 4. STATUS UPDATES ---
+async def write_status(ws=None):
+    # Status-Paket schnüren
     status = {
-        "pan": f"{float(current_pan):.1f}",
-        "tilt": f"{float(current_tilt):.1f}",
-        "client_connected": client_connected,
-        "client_name": client_name,
-        "client_role": client_role,  # --- NEU: Rolle in Status-Datei
-        "client_ip": client_ip
+        "type": "status",  # Wichtig, damit JS es erkennt!
+        "pan": current_pan,
+        "tilt": current_tilt,
+        "user": client_name,
+        "role": client_role,
+        "connected": client_connected
     }
+
+    # 1. In SHM Datei schreiben (für OLED Service)
     try:
         with open(cfg['paths']['shm_file'], 'w') as f:
             json.dump(status, f)
-    except Exception as e:
-        print(f"[SYS] Fehler beim Schreiben der Status-Datei: {e}")
+    except Exception:
+        pass
+
+    # 2. An User via Websocket senden (nur wenn ws übergeben wurde)
+    if ws is not None and not ws.closed:
+        try:
+            await ws.send_json(status)
+        except Exception as e:
+            print(f"[NET] Fehler beim Senden des Status: {e}")
 
 
 # --- 5. WEBSOCKET HANDLER ---
@@ -190,17 +201,44 @@ async def websocket_handler(request):
                                 "role": role,  # --- NEU: Rolle an Client senden
                                 "stream_url": target_url
                             })
-                            write_status()
+                            await write_status()
                         else:
                             await ws.send_json({"type": "login_fail", "message": "Passwort falsch"})
                     else:
                         await ws.send_json({"type": "login_fail", "message": "Nutzer unbekannt"})
 
-                # STEUERUNG
-                elif authenticated and 'pan' in data and 'tilt' in data:
-                    current_pan = set_servo_angle('pan', data['pan'])
-                    current_tilt = set_servo_angle('tilt', data['tilt'])
-                    write_status()
+                #STEUERUNG
+                elif authenticated and msg_type == 'move':
+                    new_pan = data.get('pan', current_pan)
+                    new_tilt = data.get('tilt', current_tilt)
+
+                    current_pan = max(cfg['hardware']['pan']['min_angle'],
+                                      min(cfg['hardware']['pan']['max_angle'], new_pan))
+
+                    current_tilt = max(cfg['hardware']['tilt']['min_angle'],
+                                       min(cfg['hardware']['tilt']['max_angle'], new_tilt))
+
+                    # 3. Hardware-Ansteuerung (nur wenn Hardware vorhanden ist)
+                    if kit:
+                        # PAN: Reverse-Logik anwenden
+                        pan_target = current_pan
+                        if cfg['hardware']['pan'].get('reverse'):
+                            pan_target = 180 - pan_target
+
+                        # TILT: Reverse-Logik anwenden
+                        tilt_target = current_tilt
+                        if cfg['hardware']['tilt'].get('reverse'):
+                            tilt_target = 180 - tilt_target
+
+                        # Befehle an die in der Config hinterlegten Kanäle senden
+                        try:
+                            kit.servo[cfg['hardware']['pan']['channel']].angle = pan_target
+                            kit.servo[cfg['hardware']['tilt']['channel']].angle = tilt_target
+                        except Exception as e:
+                            print(f"[HW] Fehler bei Servo-Ansteuerung: {e}")
+
+                    # 4. Status aktualisieren (für OLED und Websocket-Feedback)
+                    await write_status(ws)
 
                 # PASSWORT ÄNDERN
                 elif authenticated and msg_type == 'change_password':
@@ -213,6 +251,31 @@ async def websocket_handler(request):
                     else:
                         await ws.send_json({"type": "pw_change_fail", "message": "Falsches Passwort"})
 
+                # KONFIGURATION ÜBERGEBEN/AUSLESEN (NUR ADMIN)
+                elif authenticated and msg_type == 'get_config':
+                    if client_role == 'admin':
+                        await ws.send_json({
+                            "type": "config_data",
+                            "config": cfg
+                        })
+
+                    # KONFIGURATION SPEICHERN (NUR ADMIN)
+                elif authenticated and msg_type == 'update_config':
+                    if client_role == 'admin':
+                        new_cfg_data = data.get('config')
+                        if new_cfg_data:
+                            # Wir aktualisieren das globale cfg-Objekt
+                            cfg.update(new_cfg_data)
+                            # In Datei speichern
+                            with open('config.json', 'w') as f:
+                                json.dump(cfg, f, indent=4)
+
+                            print(f"[ADMIN] Konfiguration durch {client_name} aktualisiert.")
+                            await ws.send_json({"type": "config_update_success"})
+                    else:
+                        await ws.send_json({"type": "error", "message": "Nicht autorisiert"})
+
+
     finally:
         if authenticated:
             print(f"[SYS] Logout: User '{client_name}' ({client_ip}) hat getrennt.")
@@ -220,8 +283,8 @@ async def websocket_handler(request):
             client_name = "Niemand"
             client_role = "none"
             client_ip = "N/A"
-            write_status()
-    return ws
+
+            await write_status()
 
 
 # --- 6. SERVER START ---
