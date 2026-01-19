@@ -36,7 +36,8 @@ current_pan = 90
 current_tilt = 90
 client_connected = False
 client_name = "Niemand"
-client_ip = "N/A"  # --- ÄNDERUNG: Globale Variable für IP hinzugefügt
+client_role = "none"  # --- NEU: Rolle global speichern
+client_ip = "N/A"
 
 
 # --- 3. HELFER-FUNKTIONEN (Sicherheit & IP) ---
@@ -44,7 +45,6 @@ client_ip = "N/A"  # --- ÄNDERUNG: Globale Variable für IP hinzugefügt
 def hash_password(password, salt=None):
     if salt is None:
         salt = secrets.token_hex(16)
-    # .strip() entfernt unsichtbare Leerzeichen oder Zeilenumbrüche
     hashed = hashlib.sha256((salt + password.strip()).encode()).hexdigest()
     return f"{salt}${hashed}"
 
@@ -54,7 +54,6 @@ def verify_password(stored_password, provided_password):
         if not stored_password or '$' not in stored_password:
             return False
         salt, hashed = stored_password.split('$')
-        # Wir berechnen den Hash des eingegebenen Passworts mit dem alten Salt
         new_hash = hash_password(provided_password, salt).split('$')[1]
         return new_hash == hashed
     except Exception as e:
@@ -65,8 +64,23 @@ def verify_password(stored_password, provided_password):
 def load_users():
     try:
         with open(cfg['paths']['user_db'], 'r') as f:
-            data = json.load(f)
-            return data
+            users = json.load(f)
+
+        # --- AUTO-FIX LOGIK ---
+        changed = False
+        for username, data in users.items():
+            # Falls der Eintrag noch ein einfacher String (altes Format) ist:
+            if isinstance(data, str):
+                print(f"[SYS] Konvertiere User '{username}' in neues Format...")
+                users[username] = {
+                    "password": data,
+                    "role": "admin" if username == "admin" else "user"
+                }
+                changed = True
+
+        if changed:
+            save_users(users)
+        return users
     except Exception as e:
         print(f"[FEHLER] Konnte {cfg['paths']['user_db']} nicht laden: {e}")
         return {}
@@ -93,15 +107,11 @@ def get_local_ips():
     return ips
 
 
-# --- 4. SERVO LOGIK MIT REVERSE & LIMITS ---
+# --- 4. SERVO LOGIK ---
 
 def set_servo_angle(axis, angle):
     s_cfg = cfg['hardware'][axis]
-
-    # Limits einhalten
     angle = max(s_cfg['min_angle'], min(s_cfg['max_angle'], angle))
-
-    # Reverse Logik
     actual_angle = (180 - angle) if s_cfg['reverse'] else angle
 
     if kit:
@@ -109,18 +119,16 @@ def set_servo_angle(axis, angle):
             kit.servo[s_cfg['channel']].angle = actual_angle
         except Exception as e:
             print(f"[HW] Servo Fehler {axis}: {e}")
-
     return angle
 
 
 def write_status():
-    # Wir formatieren die Zahlen hier explizit als Strings mit einer Nachkommastelle,
-    # damit in der JSON-Datei keine Fließkomma-Fehler entstehen.
     status = {
         "pan": f"{float(current_pan):.1f}",
         "tilt": f"{float(current_tilt):.1f}",
         "client_connected": client_connected,
         "client_name": client_name,
+        "client_role": client_role,  # --- NEU: Rolle in Status-Datei
         "client_ip": client_ip
     }
     try:
@@ -133,8 +141,7 @@ def write_status():
 # --- 5. WEBSOCKET HANDLER ---
 
 async def websocket_handler(request):
-    # --- ÄNDERUNG: client_ip als global markieren
-    global current_pan, current_tilt, client_connected, client_name, client_ip
+    global current_pan, current_tilt, client_connected, client_name, client_ip, client_role
 
     client_ip = request.remote
     print(f"[SYS] Neue WebSocket-Verbindung: {client_ip}")
@@ -157,36 +164,36 @@ async def websocket_handler(request):
                     u = str(data.get('user', '')).strip()
                     p = str(data.get('pass', '')).strip()
 
-                    print(f"[AUTH] Login-Versuch für User: '{u}' | {client_ip}")
-
                     if u in users:
-                        print(f"[AUTH] User '{u}' gefunden. Prüfe Passwort...")
-                        if verify_password(users[u], p):
+                        user_entry = users[u]
+                        # Passwort-Check gegen das 'password' Feld im Objekt
+                        if verify_password(user_entry.get('password', ''), p):
                             authenticated = True
                             this_session_user = u
 
+                            # Rolle auslesen (Default: user)
+                            role = user_entry.get('role', 'user')
+
                             client_connected = True
                             client_name = u
+                            client_role = role
 
-                            print(f"[AUTH] LOGIN ERFOLGREICH: User '{u}' | {client_ip}")
+                            print(f"[AUTH] LOGIN ERFOLGREICH: User '{u}' [{role}] | {client_ip}")
 
                             server_ip = request.host.split(':')[0]
-                            stream_name = "cam"  # Dein Stream-Name aus der go2rtc.yaml
+                            stream_name = "cam"
                             target_url = f"http://{server_ip}:1984/stream.html?src={stream_name}"
 
                             await ws.send_json({
                                 "type": "login_success",
                                 "user": u,
+                                "role": role,  # --- NEU: Rolle an Client senden
                                 "stream_url": target_url
                             })
-
                             write_status()
                         else:
-                            print(f"[AUTH] PASSWORT FALSCH für '{u}'")
                             await ws.send_json({"type": "login_fail", "message": "Passwort falsch"})
                     else:
-                        print(f"[AUTH] USER NICHT GEFUNDEN: '{u}'")
-                        print(f"[DEBUG] Vorhandene User in Datei: {list(users.keys())}")
                         await ws.send_json({"type": "login_fail", "message": "Nutzer unbekannt"})
 
                 # STEUERUNG
@@ -198,8 +205,9 @@ async def websocket_handler(request):
                 # PASSWORT ÄNDERN
                 elif authenticated and msg_type == 'change_password':
                     users = load_users()
-                    if verify_password(users[this_session_user], data.get('old_pass')):
-                        users[this_session_user] = hash_password(data.get('new_pass'))
+                    # Zugriff auf users[user]['password']
+                    if verify_password(users[this_session_user].get('password'), data.get('old_pass')):
+                        users[this_session_user]['password'] = hash_password(data.get('new_pass'))
                         if save_users(users):
                             await ws.send_json({"type": "pw_change_success"})
                     else:
@@ -207,10 +215,10 @@ async def websocket_handler(request):
 
     finally:
         if authenticated:
-            # --- ÄNDERUNG: IP beim Logout anzeigen und zurücksetzen
             print(f"[SYS] Logout: User '{client_name}' ({client_ip}) hat getrennt.")
             client_connected = False
             client_name = "Niemand"
+            client_role = "none"
             client_ip = "N/A"
             write_status()
     return ws
