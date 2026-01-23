@@ -242,14 +242,63 @@ async def websocket_handler(request):
 
                 # PASSWORT ÄNDERN
                 elif authenticated and msg_type == 'change_password':
-                    users = load_users()
-                    # Zugriff auf users[user]['password']
-                    if verify_password(users[this_session_user].get('password'), data.get('old_pass')):
-                        users[this_session_user]['password'] = hash_password(data.get('new_pass'))
-                        if save_users(users):
-                            await ws.send_json({"type": "pw_change_success"})
+                    old_p = data.get('old')
+                    new_p = data.get('new')
+
+                    users_db = load_users()
+                    user_data = users_db.get(client_name)
+
+                    # Prüfen ob altes PW stimmt
+                    if user_data and verify_password(user_data['password'], old_p):
+                        users_db[client_name]['password'] = hash_password(new_p)
+                        if save_users(users_db):
+                            await ws.send_json(
+                                {"type": "admin_action_success", "message": "Dein Passwort wurde geändert!"})
                     else:
-                        await ws.send_json({"type": "pw_change_fail", "message": "Falsches Passwort"})
+                        await ws.send_json({"type": "error", "message": "Altes Passwort ist falsch!"})
+
+                elif authenticated and msg_type == 'get_users':
+                    if client_role == 'admin':
+                        users_db = load_users()
+                        user_list = []
+                        # Wir senden nur Namen und Rollen, KEINE Passwörter!
+                        for u_name, u_data in users_db.items():
+                            user_list.append({
+                                "name": u_name,
+                                "role": u_data.get("role", "user")
+                            })
+                        await ws.send_json({"type": "user_list", "users": user_list})
+
+                # ADMIN: USER UPDATEN (PASSWORT RESET & ROLLE)
+                elif authenticated and msg_type == 'admin_update_user':
+                    if client_role == 'admin':
+                        target_user = data.get('target_user')
+                        new_pass = data.get('new_pass')
+                        is_admin = data.get('is_admin')
+
+                        users_db = load_users()  # Aktuellen Stand laden
+
+                        if target_user in users_db:
+                            # Rolle setzen
+                            users_db[target_user]['role'] = 'admin' if is_admin else 'user'
+
+                            # Passwort nur ändern, wenn ein neues eingegeben wurde
+                            if new_pass and len(str(new_pass).strip()) > 0:
+                                users_db[target_user]['password'] = hash_password(str(new_pass).strip())
+                                print(f"[ADMIN] PW-Reset für {target_user}")
+
+                            # In Datei schreiben
+                            if save_users(users_db):
+                                await ws.send_json({
+                                    "type": "admin_action_success",
+                                    "message": f"Änderungen für {target_user} gespeichert!"
+                                })
+                                # WICHTIG: Sende die aktualisierte Liste sofort zurück an den Admin
+                                new_list = [{"name": n, "role": d.get("role", "user")} for n, d in users_db.items()]
+                                await ws.send_json({"type": "user_list", "users": new_list})
+                        else:
+                            await ws.send_json({"type": "error", "message": "User nicht gefunden"})
+
 
                 # KONFIGURATION ÜBERGEBEN/AUSLESEN (NUR ADMIN)
                 elif authenticated and msg_type == 'get_config':
@@ -275,7 +324,6 @@ async def websocket_handler(request):
                     else:
                         await ws.send_json({"type": "error", "message": "Nicht autorisiert"})
 
-
     finally:
         if authenticated:
             print(f"[SYS] Logout: User '{client_name}' ({client_ip}) hat getrennt.")
@@ -285,6 +333,8 @@ async def websocket_handler(request):
             client_ip = "N/A"
 
             await write_status()
+
+    return ws
 
 
 # --- 6. SERVER START ---

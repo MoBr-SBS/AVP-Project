@@ -39,6 +39,12 @@ ws.onmessage = (event) => {
     else if (data.type === 'config_update_success') {
         alert("Konfiguration gespeichert!");
     }
+    else if (data.type === 'user_list') {
+        renderUserList(data.users);
+    }
+    else if (data.type === 'admin_action_success') {
+        alert(data.message);
+    }
 };
 
 // --- STEUERUNGS FUNKTIONEN ---
@@ -99,6 +105,14 @@ function openUserSettings() {
     document.getElementById('settingsOverlay').style.display = 'flex';
     document.getElementById('userSettingsArea').style.display = 'block';
     document.getElementById('adminArea').style.display = 'none';
+
+    // NEU: Wenn Admin, zeige Verwaltungs-Bereich und lade User
+    if (userRole === 'admin') {
+        document.getElementById('adminUserMgmt').style.display = 'block';
+        ws.send(JSON.stringify({ type: 'get_users' }));
+    } else {
+        document.getElementById('adminUserMgmt').style.display = 'none';
+    }
 }
 
 function openSystemSettings() {
@@ -176,4 +190,87 @@ function performLogin() {
     const u = document.getElementById('userInput').value;
     const p = document.getElementById('passInput').value;
     ws.send(JSON.stringify({ type: 'login', user: u, pass: p }));
+}
+
+function renderUserList(users) {
+    const container = document.getElementById('userListContainer');
+    container.innerHTML = ''; // Liste leeren
+
+    users.forEach(u => {
+        // Container für eine Zeile
+        const row = document.createElement('div');
+        row.style = "display: flex; align-items: center; gap: 10px; background: #2a2a2a; padding: 10px; margin-bottom: 5px; border-radius: 5px;";
+
+        // 1. Name
+        const nameLabel = document.createElement('span');
+        nameLabel.innerText = u.name;
+        nameLabel.style = "flex: 1; font-weight: bold;";
+
+        // 2. Passwort Reset Feld
+        const pwInput = document.createElement('input');
+        pwInput.type = "password";
+        pwInput.placeholder = "Reset PW";
+        pwInput.id = `pw-reset-${u.name}`;
+        pwInput.style = "width: 100px; padding: 5px; margin: 0;";
+
+        // 3. Admin Checkbox
+        const roleLabel = document.createElement('label');
+        roleLabel.style = "display: flex; align-items: center; gap: 5px; font-size: 0.8rem; cursor: pointer;";
+        const roleCheck = document.createElement('input');
+        roleCheck.type = "checkbox";
+        roleCheck.id = `role-check-${u.name}`;
+        if (u.role === 'admin') roleCheck.checked = true;
+
+        roleLabel.appendChild(roleCheck);
+        roleLabel.appendChild(document.createTextNode("Admin"));
+
+        // 4. Speicher Button
+        const saveBtn = document.createElement('button');
+        saveBtn.innerText = "💾";
+        saveBtn.title = "Speichern";
+        saveBtn.style = "width: auto; padding: 5px 10px; background: #007bff; margin: 0;";
+        saveBtn.onclick = () => submitUserUpdate(u.name);
+
+        // Zusammenbauen
+        row.appendChild(nameLabel);
+        row.appendChild(pwInput);
+        row.appendChild(roleLabel);
+        row.appendChild(saveBtn);
+
+        container.appendChild(row);
+    });
+}
+
+function changePassword() {
+    const oldPass = document.getElementById('oldPass').value;
+    const newPass = document.getElementById('newPass').value;
+
+    if(!oldPass || !newPass) {
+        alert("Bitte fülle beide Felder aus!");
+        return;
+    }
+
+    ws.send(JSON.stringify({
+        type: 'change_password',
+        old: oldPass,
+        new: newPass
+    }));
+}
+
+// 2. Admin: User aktualisieren (wird vom Speicher-Button in der Liste aufgerufen)
+function submitUserUpdate(username) {
+    const newPassInput = document.getElementById(`pw-reset-${username}`);
+    const roleCheck = document.getElementById(`role-check-${username}`);
+
+    if(!newPassInput || !roleCheck) return;
+
+    const newPass = newPassInput.value;
+    const isAdmin = roleCheck.checked;
+
+    ws.send(JSON.stringify({
+        type: 'admin_update_user',
+        target_user: username,
+        new_pass: newPass, // Wenn leer, wird PW vom Server ignoriert
+        is_admin: isAdmin
+    }));
 }

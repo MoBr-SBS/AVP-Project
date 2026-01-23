@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Robot Control v2</title>
+    <title>Robot Control</title>
     <link rel="stylesheet" href="/static/css/style.css">
 </head>
 <body>
@@ -34,11 +34,18 @@
 
             <div id="userSettingsArea">
                 <h1>Profil Einstellungen</h1>
+
                 <div class="settings-section">
-                    <h3>Passwort ändern</h3>
+                    <h3>Mein Passwort ändern</h3>
                     <input type="password" id="oldPass" placeholder="Altes Passwort">
                     <input type="password" id="newPass" placeholder="Neues Passwort">
                     <button onclick="changePassword()">Passwort speichern</button>
+                </div>
+
+                <div id="adminUserMgmt" style="display: none; margin-top: 30px; border-top: 1px solid #444; padding-top: 10px;">
+                    <h3 style="color: #d63384;">Benutzerverwaltung (Admin)</h3>
+                    <div id="userListContainer">
+                        </div>
                 </div>
             </div>
 
