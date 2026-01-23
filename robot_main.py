@@ -299,6 +299,56 @@ async def websocket_handler(request):
                         else:
                             await ws.send_json({"type": "error", "message": "User nicht gefunden"})
 
+                #CREATE NEW USER
+                elif authenticated and msg_type == 'admin_create_user':
+                    if client_role == 'admin':
+                        new_u = str(data.get('username', '')).strip()
+                        new_p = str(data.get('password', '')).strip()
+                        is_admin = data.get('is_admin')
+
+                        users_db = load_users()
+
+                        if not new_u or not new_p:
+                            await ws.send_json({"type": "error", "message": "Bitte Name und Passwort angeben!"})
+                        elif new_u in users_db:
+                            await ws.send_json({"type": "error", "message": f"User '{new_u}' existiert bereits!"})
+                        else:
+                            # User anlegen
+                            users_db[new_u] = {
+                                "password": hash_password(new_p),
+                                "role": "admin" if is_admin else "user"
+                            }
+
+                            if save_users(users_db):
+                                await ws.send_json({"type": "admin_action_success",
+                                                    "message": f"User '{new_u}' erfolgreich angelegt."})
+                                # Liste für den Admin sofort aktualisieren
+                                new_list = [{"name": n, "role": d.get("role", "user")} for n, d in users_db.items()]
+                                await ws.send_json({"type": "user_list", "users": new_list})
+
+                #DELETE USER
+                elif authenticated and msg_type == 'admin_delete_user':
+                    if client_role == 'admin':
+                        target = data.get('target_user')
+
+                        # Einzige Sperre: Man kann sich nicht selbst löschen
+                        if target == client_name:
+                            await ws.send_json({"type": "error",
+                                                "message": "Selbstmord-Kommando abgelehnt: Du kannst dich nicht selbst löschen!"})
+                        else:
+                            users_db = load_users()
+                            if target in users_db:
+                                del users_db[target]
+                                if save_users(users_db):
+                                    await ws.send_json(
+                                        {"type": "admin_action_success", "message": f"User '{target}' wurde gelöscht."})
+                                    print(f"[ADMIN] User '{target}' erfolgreich gelöscht!")
+                                    # Liste aktualisieren
+                                    new_list = [{"name": n, "role": d.get("role", "user")} for n, d in users_db.items()]
+                                    await ws.send_json({"type": "user_list", "users": new_list})
+                            else:
+                                await ws.send_json({"type": "error", "message": "User nicht gefunden."})
+
 
                 # KONFIGURATION ÜBERGEBEN/AUSLESEN (NUR ADMIN)
                 elif authenticated and msg_type == 'get_config':

@@ -4,6 +4,7 @@ const port = window.location.port;
 let currentPan = 90;
 let currentTilt = 90;
 let isLoggedIn = false;
+let currentLoggedInUser = "";
 let userRole = 'user';
 let lastSend = 0;
 
@@ -12,6 +13,10 @@ const ws = new WebSocket(`ws://${host}:${port}/ws`);
 // --- WEBSOCKET LOGIK ---
 ws.onmessage = (event) => {
     const data = JSON.parse(event.data);
+
+    if (data.user) {
+        currentLoggedInUser = data.user;
+    }
 
     if (data.type === 'login_success') {
         isLoggedIn = true;
@@ -196,49 +201,120 @@ function renderUserList(users) {
     const container = document.getElementById('userListContainer');
     container.innerHTML = ''; // Liste leeren
 
+    // 1. Bestehende User auflisten
     users.forEach(u => {
-        // Container für eine Zeile
         const row = document.createElement('div');
         row.style = "display: flex; align-items: center; gap: 10px; background: #2a2a2a; padding: 10px; margin-bottom: 5px; border-radius: 5px;";
 
-        // 1. Name
+        // Name
         const nameLabel = document.createElement('span');
         nameLabel.innerText = u.name;
         nameLabel.style = "flex: 1; font-weight: bold;";
 
-        // 2. Passwort Reset Feld
+        // PW Reset
         const pwInput = document.createElement('input');
         pwInput.type = "password";
         pwInput.placeholder = "Reset PW";
         pwInput.id = `pw-reset-${u.name}`;
         pwInput.style = "width: 100px; padding: 5px; margin: 0;";
 
-        // 3. Admin Checkbox
+        // Admin Checkbox
         const roleLabel = document.createElement('label');
         roleLabel.style = "display: flex; align-items: center; gap: 5px; font-size: 0.8rem; cursor: pointer;";
         const roleCheck = document.createElement('input');
         roleCheck.type = "checkbox";
         roleCheck.id = `role-check-${u.name}`;
         if (u.role === 'admin') roleCheck.checked = true;
-
         roleLabel.appendChild(roleCheck);
         roleLabel.appendChild(document.createTextNode("Admin"));
 
-        // 4. Speicher Button
+        // Save Button
         const saveBtn = document.createElement('button');
         saveBtn.innerText = "💾";
-        saveBtn.title = "Speichern";
+        saveBtn.title = "Änderungen speichern";
         saveBtn.style = "width: auto; padding: 5px 10px; background: #007bff; margin: 0;";
         saveBtn.onclick = () => submitUserUpdate(u.name);
 
-        // Zusammenbauen
         row.appendChild(nameLabel);
         row.appendChild(pwInput);
         row.appendChild(roleLabel);
         row.appendChild(saveBtn);
-
         container.appendChild(row);
+
+        const delBtn = document.createElement('button');
+        delBtn.innerText = "🗑️";
+        delBtn.title = "Löschen";
+
+        // Delete Button
+        if (u.name === currentLoggedInUser) {
+            // Button ausgrauen und deaktivieren
+            delBtn.style = "width: auto; padding: 5px 10px; background: #555; margin: 0; margin-left: 5px; cursor: not-allowed; opacity: 0.5;";
+            delBtn.disabled = true;
+            delBtn.title = "Du kannst dich nicht selbst löschen";
+        } else {
+            // Normaler roter Button
+            delBtn.style = "width: auto; padding: 5px 10px; background: #dc3545; margin: 0; margin-left: 5px;";
+            delBtn.onclick = () => deleteUser(u.name);
+        }
+
+        row.appendChild(delBtn);
     });
+
+    // 2. Box für NEUEN User (ganz unten)
+    const newRow = document.createElement('div');
+    // Etwas anderes Styling (Dashed Border), damit es sich abhebt
+    newRow.style = "display: flex; align-items: center; gap: 10px; background: #222; padding: 10px; margin-top: 20px; border: 1px dashed #666; border-radius: 5px;";
+
+    const newNameInput = document.createElement('input');
+    newNameInput.type = "text";
+    newNameInput.placeholder = "Neuer Username";
+    newNameInput.id = "new-user-name";
+    newNameInput.style = "flex: 1; padding: 5px; margin: 0; background: #333; color: #fff; border: 1px solid #555;";
+
+    const newPassInput = document.createElement('input');
+    newPassInput.type = "password";
+    newPassInput.placeholder = "Passwort";
+    newPassInput.id = "new-user-pass";
+    newPassInput.style = "width: 100px; padding: 5px; margin: 0; background: #333; color: #fff; border: 1px solid #555;";
+
+    const newRoleLabel = document.createElement('label');
+    newRoleLabel.style = "display: flex; align-items: center; gap: 5px; font-size: 0.8rem; cursor: pointer;";
+    const newRoleCheck = document.createElement('input');
+    newRoleCheck.type = "checkbox";
+    newRoleCheck.id = "new-user-admin";
+    newRoleLabel.appendChild(newRoleCheck);
+    newRoleLabel.appendChild(document.createTextNode("Admin"));
+
+    const addBtn = document.createElement('button');
+    addBtn.innerText = "➕";
+    addBtn.title = "User anlegen";
+    addBtn.style = "width: auto; padding: 5px 10px; background: #28a745; margin: 0;"; // Grün
+    addBtn.onclick = createNewUser;
+
+    newRow.appendChild(newNameInput);
+    newRow.appendChild(newPassInput);
+    newRow.appendChild(newRoleLabel);
+    newRow.appendChild(addBtn);
+
+    container.appendChild(newRow);
+}
+
+function createNewUser() {
+    const name = document.getElementById('new-user-name').value;
+    const pass = document.getElementById('new-user-pass').value;
+    const isAdmin = document.getElementById('new-user-admin').checked;
+
+    if (!name || !pass) {
+        alert("Bitte Username und Passwort für den neuen Nutzer eingeben!");
+        return;
+    }
+
+    ws.send(JSON.stringify({
+        type: 'admin_create_user',
+        username: name,
+        password: pass,
+        is_admin: isAdmin
+    }));
 }
 
 function changePassword() {
@@ -273,4 +349,14 @@ function submitUserUpdate(username) {
         new_pass: newPass, // Wenn leer, wird PW vom Server ignoriert
         is_admin: isAdmin
     }));
+}
+
+function deleteUser(username) {
+    // Sicherheitsabfrage im Browser
+    if (confirm(`Möchtest du den Benutzer '${username}' wirklich endgültig löschen?`)) {
+        ws.send(JSON.stringify({
+            type: 'admin_delete_user',
+            target_user: username
+        }));
+    }
 }
