@@ -21,6 +21,12 @@ ws.onmessage = (event) => {
         document.getElementById('connectionStatus').innerText = "Verbunden";
         document.getElementById('connectionStatus').style.color = "#00ff00";
         document.getElementById('camStream').src = data.stream_url;
+
+        if (userRole === 'admin') {
+            document.getElementById('btn-system').style.display = 'inline-block';
+        } else {
+            document.getElementById('btn-system').style.display = 'none';
+        }
     }
     else if (data.type === 'status') {
         // WICHTIG: parseFloat erzwingt, dass es eine Zahl ist!
@@ -88,13 +94,24 @@ setInterval(() => {
 }, 50);
 
 // --- ADMIN & SETTINGS FUNKTIONEN ---
-function openSettings() {
+function openUserSettings() {
     if(!isLoggedIn) return;
     document.getElementById('settingsOverlay').style.display = 'flex';
-    if(userRole === 'admin') {
-        document.getElementById('adminArea').style.display = 'block';
-        ws.send(JSON.stringify({ type: 'get_config' }));
-    }
+    document.getElementById('userSettingsArea').style.display = 'block';
+    document.getElementById('adminArea').style.display = 'none';
+}
+
+function openSystemSettings() {
+    if(!isLoggedIn || userRole !== 'admin') return;
+
+    document.getElementById('settingsOverlay').style.display = 'flex';
+
+    // User Bereich AUS, Admin Bereich AN
+    document.getElementById('userSettingsArea').style.display = 'none';
+    document.getElementById('adminArea').style.display = 'block';
+
+    // Config vom Server laden
+    ws.send(JSON.stringify({ type: 'get_config' }));
 }
 
 function closeSettings() {

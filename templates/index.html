@@ -14,7 +14,8 @@
             <div class="header-title">Robot Control</div>
         </div>
         <div class="header-right">
-            <button class="settings-btn" onclick="openSettings()">Settings</button>
+            <button class="settings-btn" onclick="openUserSettings()">👤 Profil</button>
+            <button id="btn-system" class="settings-btn admin-only" onclick="openSystemSettings()" style="display:none; margin-left: 10px; background-color: #d63384; border-color: #b02a6b;">⚙️ System</button>
         </div>
     </header>
 
@@ -28,64 +29,67 @@
     </div>
 
     <div id="settingsOverlay" class="overlay" style="display: none;">
-    <div class="box settings-box">
-        <span class="close-icon" onclick="closeSettings()">&times;</span>
-        <h1>Einstellungen</h1>
+        <div class="box settings-box">
+            <span class="close-icon" onclick="closeSettings()">&times;</span>
 
-        <div class="settings-section">
-            <h2>Passwort ändern</h2>
-            <input type="password" id="oldPass" placeholder="Altes Passwort">
-            <input type="password" id="newPass" placeholder="Neues Passwort">
-            <button onclick="changePassword()">Passwort speichern</button>
+            <div id="userSettingsArea">
+                <h1>Profil Einstellungen</h1>
+                <div class="settings-section">
+                    <h3>Passwort ändern</h3>
+                    <input type="password" id="oldPass" placeholder="Altes Passwort">
+                    <input type="password" id="newPass" placeholder="Neues Passwort">
+                    <button onclick="changePassword()">Passwort speichern</button>
+                </div>
+            </div>
+
+            <div id="adminArea" style="display: none;">
+                <h1 style="color: #d63384;">System-Konfiguration</h1>
+                <p style="font-size: 0.8rem; color: #999;">Nur für Administratoren</p>
+
+                <div class="settings-group">
+                    <h4>Servos (Pan/Tilt)</h4>
+                    <div class="admin-grid">
+                        <label>Pan Channel: <input type="number" id="cfg-pan-ch"></label>
+                        <label>Tilt Channel: <input type="number" id="cfg-tilt-ch"></label>
+
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="cfg-pan-rev"> Pan umkehren
+                        </label>
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="cfg-tilt-rev"> Tilt umkehren
+                        </label>
+
+                        <label>Pan Min: <input type="number" id="cfg-pan-min"></label>
+                        <label>Pan Max: <input type="number" id="cfg-pan-max"></label>
+                        <label>Tilt Min: <input type="number" id="cfg-tilt-min"></label>
+                        <label>Tilt Max: <input type="number" id="cfg-tilt-max"></label>
+                    </div>
+                </div>
+
+                <div class="settings-group">
+                    <h4>OLED Display Pins</h4>
+                    <div class="admin-grid">
+                        <label>I2C Adr: <input type="text" id="cfg-oled-addr"></label>
+                        <label>Pin CLK: <input type="number" id="cfg-oled-clk"></label>
+                        <label>Pin DT: <input type="number" id="cfg-oled-dt"></label>
+                        <label>Pin SW: <input type="number" id="cfg-oled-sw"></label>
+                    </div>
+                </div>
+
+                <div class="settings-group">
+                    <h4>Netzwerk & Sicherheit</h4>
+                    <div class="admin-grid">
+                        <label>Server Port: <input type="number" id="cfg-net-port"></label>
+                        <label>go2RTC Token: <input type="text" id="cfg-sec-token"></label>
+                    </div>
+                </div>
+
+                <button class="admin-save-btn" onclick="saveAdminConfig()">Gesamte Konfiguration speichern</button>
+            </div>
+
+            <button class="secondary" onclick="closeSettings()" style="margin-top: 20px;">Schließen</button>
         </div>
-
-        <div id="adminArea" style="display: none; border-top: 1px solid #444; margin-top: 20px; padding-top: 15px;">
-            <h2>System-Konfiguration (Admin)</h2>
-
-            <div class="settings-group">
-                <h4>Servos (Pan/Tilt)</h4>
-                <div class="admin-grid">
-                    <label>Pan Channel: <input type="number" id="cfg-pan-ch"></label>
-                    <label>Tilt Channel: <input type="number" id="cfg-tilt-ch"></label>
-
-                    <label class="checkbox-label">
-                        <input type="checkbox" id="cfg-pan-rev"> Pan umkehren
-                    </label>
-                    <label class="checkbox-label">
-                        <input type="checkbox" id="cfg-tilt-rev"> Tilt umkehren
-                    </label>
-
-                    <label>Pan Min: <input type="number" id="cfg-pan-min"></label>
-                    <label>Pan Max: <input type="number" id="cfg-pan-max"></label>
-                    <label>Tilt Min: <input type="number" id="cfg-tilt-min"></label>
-                    <label>Tilt Max: <input type="number" id="cfg-tilt-max"></label>
-                </div>
-            </div>
-
-            <div class="settings-group">
-                <h4>OLED Display Pins</h4>
-                <div class="admin-grid">
-                    <label>I2C Adr: <input type="text" id="cfg-oled-addr"></label>
-                    <label>Pin CLK: <input type="number" id="cfg-oled-clk"></label>
-                    <label>Pin DT: <input type="number" id="cfg-oled-dt"></label>
-                    <label>Pin SW: <input type="number" id="cfg-oled-sw"></label>
-                </div>
-            </div>
-
-            <div class="settings-group">
-                <h4>Netzwerk & Sicherheit</h4>
-                <div class="admin-grid">
-                    <label>Server Port: <input type="number" id="cfg-net-port"></label>
-                    <label>go2RTC Token: <input type="text" id="cfg-sec-token"></label>
-                </div>
-            </div>
-
-            <button class="admin-save-btn" onclick="saveAdminConfig()">Gesamte Konfiguration speichern</button>
-        </div>
-
-        <button class="secondary" onclick="closeSettings()">Abbrechen</button>
     </div>
-</div>
 
     <div class="main-content">
         <div class="video-container">
