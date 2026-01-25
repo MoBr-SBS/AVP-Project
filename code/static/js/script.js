@@ -7,6 +7,10 @@ let isLoggedIn = false;
 let currentLoggedInUser = "";
 let userRole = 'user';
 let lastSend = 0;
+// --- AVP VARIABLEN ---
+let xrSession = null;
+let initialYaw = null;
+let initialPitch = null;
 
 const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
 const ws = new WebSocket(`${protocol}://${host}:${port}/ws`);
@@ -379,5 +383,85 @@ function triggerSystem(action) {
             closeSettings();
             alert("Befehl gesendet. Verbindung wird getrennt.");
         }
+    }
+}
+
+function openAVPSettings() {
+    if(!isLoggedIn) return;
+    document.getElementById('avpOverlay').style.display = 'flex';
+}
+
+function closeAVP() {
+    document.getElementById('avpOverlay').style.display = 'none';
+    if (xrSession) xrSession.end();
+}
+
+async function startAVPSession() {
+    const status = document.getElementById('avpStatus');
+    const canvas = document.getElementById('xrCanvas');
+
+    try {
+        const gl = canvas.getContext('webgl', { xrCompatible: true });
+        // WebXR Session anfordern
+        const session = await navigator.xr.requestSession('immersive-vr', {
+            requiredFeatures: ['local']
+        });
+
+        xrSession = session;
+        status.innerText = "XR Aktiv - Kalibrierung läuft...";
+
+        session.updateRenderState({ baseLayer: new XRWebGLLayer(session, gl) });
+        const referenceSpace = await session.requestReferenceSpace('local');
+
+        // Reset der Kalibrierung beim Start
+        initialYaw = null;
+        initialPitch = null;
+
+        function onFrame(time, frame) {
+            if (!xrSession) return;
+            const pose = frame.getViewerPose(referenceSpace);
+
+            if (pose) {
+                const matrix = pose.transform.matrix;
+
+                // Extraktion der Winkel (wie in deiner server.py)
+                let yaw = Math.atan2(-matrix[8], matrix[10]) * (180 / Math.PI);
+                let pitch = Math.asin(matrix[9]) * (180 / Math.PI);
+
+                // Initial-Position beim ersten Frame speichern (Zentrierung)
+                if (initialYaw === null) {
+                    initialYaw = yaw;
+                    initialPitch = pitch;
+                    status.innerText = "Tracking läuft - Kopf bewegen!";
+                }
+
+                // Delta-Berechnung (Relativ zur Startposition)
+                // Wir mappen das Delta auf die 90° Grundstellung des Roboters
+                let deltaYaw = yaw - initialYaw;
+                let deltaPitch = pitch - initialPitch;
+
+                // Mapping auf Roboter-Bereich (90 ist Mitte)
+                // Invertierung falls nötig (hier - für natürliche Bewegung)
+                let targetPan = 90 - deltaYaw;
+                let targetTilt = 90 - deltaPitch;
+
+                // An den Roboter senden
+                sendAngles(targetPan, targetTilt);
+
+                status.innerText = `Pan: ${targetPan.toFixed(1)}° | Tilt: ${targetTilt.toFixed(1)}°`;
+            }
+            session.requestAnimationFrame(onFrame);
+        }
+
+        session.requestAnimationFrame(onFrame);
+
+        session.onend = () => {
+            xrSession = null;
+            status.innerText = "Session beendet.";
+        };
+
+    } catch (e) {
+        status.innerText = "Fehler: " + e.message;
+        console.error(e);
     }
 }

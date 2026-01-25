@@ -107,3 +107,14 @@ iframe { width: 100%; height: 100%; border: none; pointer-events: none; }
 .admin-save-btn {
     background-color: #28a745 !important; /* Grün für System-Änderungen */
 }
+
+#btn-avp:hover {
+    background-color: #0056b3 !important;
+    box-shadow: 0 0 15px rgba(0, 122, 255, 0.5);
+}
+
+#xrButton:hover {
+    background-color: #e0e0e0 !important;
+    transform: scale(1.05);
+    transition: all 0.2s ease;
+}

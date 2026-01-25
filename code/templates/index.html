@@ -14,6 +14,7 @@
             <div class="header-title">Robot Control</div>
         </div>
         <div class="header-right">
+            <button id="btn-avp" class="settings-btn" onclick="openAVPSettings()" style="background-color: #007aff; border-color: #0056b3; margin-right: 10px;">🥽 Vision Pro</button>
             <button class="settings-btn" onclick="openUserSettings()">👤 Profil</button>
             <button id="btn-system" class="settings-btn admin-only" onclick="openSystemSettings()" style="display:none; margin-left: 10px; background-color: #d63384; border-color: #b02a6b;">⚙️ System</button>
         </div>
@@ -130,5 +131,26 @@
     </div>
 
     <script src="/static/js/script.js"></script>
+
+    <div id="avpOverlay" class="overlay" style="display: none;">
+    <div class="box settings-box">
+        <span class="close-icon" onclick="closeAVP()">&times;</span>
+        <h1>Vision Pro Steuerung</h1>
+        <p style="color: #888; font-size: 0.9rem;">Steuere den Roboter durch Kopfbewegungen im immersiven Raum.</p>
+
+        <div class="settings-section">
+            <button id="xrButton" onclick="startAVPSession()" style="background-color: #ffffff; color: #000; font-weight: bold; border-radius: 50px;">
+                Start Immersive Session
+            </button>
+        </div>
+
+        <div id="avpStatus" style="margin-top: 15px; font-family: monospace; font-size: 12px; color: #aaa;">
+            Bereit für XR...
+        </div>
+
+        <canvas id="xrCanvas" style="display:none;"></canvas>
+        <button class="secondary" onclick="closeAVP()" style="margin-top: 20px;">Schließen</button>
+    </div>
+</div>
 </body>
 </html>
