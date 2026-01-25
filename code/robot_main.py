@@ -1,4 +1,5 @@
 import asyncio
+import sys
 import json
 import board
 import busio
@@ -298,6 +299,27 @@ async def websocket_handler(request):
                                 await ws.send_json({"type": "user_list", "users": new_list})
                         else:
                             await ws.send_json({"type": "error", "message": "User nicht gefunden"})
+
+                # ADMIN: SYSTEM STEUERUNG (Restart, Reboot, Shutdown)
+                elif authenticated and msg_type == 'system_control':
+                    if client_role == 'admin':
+                        command = data.get('command')
+                        print(f"[ADMIN] Führt System-Befehl aus: {command}")
+
+                        if command == 'restart_code':
+                            await ws.send_json({"type": "admin_action_success", "message": "Server startet neu..."})
+                            # Startet das aktuelle Python-Skript neu
+                            os.execv(sys.executable, ['python3'] + sys.argv)
+
+                        elif command == 'reboot':
+                            await ws.send_json(
+                                {"type": "admin_action_success", "message": "Raspberry Pi startet neu..."})
+                            os.system('sudo reboot')
+
+                        elif command == 'shutdown':
+                            await ws.send_json(
+                                {"type": "admin_action_success", "message": "Raspberry Pi fährt herunter..."})
+                            os.system('sudo shutdown -h now')
 
                 #CREATE NEW USER
                 elif authenticated and msg_type == 'admin_create_user':

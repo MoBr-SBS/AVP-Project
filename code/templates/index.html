@@ -43,17 +43,31 @@
                 </div>
 
                 <div id="adminUserMgmt" style="display: none; margin-top: 30px; border-top: 1px solid #444; padding-top: 10px;">
-                    <h3 style="color: #d63384;">Benutzerverwaltung (Admin)</h3>
+                    <h3 style="color: #d21616;">Benutzerverwaltung (Admin)</h3>
                     <div id="userListContainer">
                         </div>
                 </div>
             </div>
 
             <div id="adminArea" style="display: none;">
-                <h1 style="color: #d63384;">System-Konfiguration</h1>
-                <p style="font-size: 0.8rem; color: #999;">Nur für Administratoren</p>
+                <h1 style="color: #d21616;">System-Konfiguration</h1>
 
-                <div class="settings-group">
+                <div class="settings-group" style="border-color: #ff4444; background: rgba(255, 0, 0, 0.1);">
+                <h4 style="color: #ff4444; margin-top: 0;">Power Management</h4>
+                <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+                    <button onclick="triggerSystem('restart_code')" style="background-color: #ff9800; border-color: #e68900; flex: 1;">
+                        🔁 Code Neustart
+                    </button>
+                    <button onclick="triggerSystem('reboot')" style="background-color: #dc3545; border-color: #b02a37; flex: 1;">
+                        🔄 Pi Reboot
+                    </button>
+                    <button onclick="triggerSystem('shutdown')" style="background-color: #8b0000; border-color: #5c0000; flex: 1;">
+                        🛑 Pi Aus
+                    </button>
+                </div>
+            </div>
+
+                <div class="settings-group";>
                     <h4>Servos (Pan/Tilt)</h4>
                     <div class="admin-grid">
                         <label>Pan Channel: <input type="number" id="cfg-pan-ch"></label>

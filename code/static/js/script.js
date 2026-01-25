@@ -360,3 +360,23 @@ function deleteUser(username) {
         }));
     }
 }
+
+function triggerSystem(action) {
+    let text = "";
+    if (action === 'restart_code') text = "Soll der Robot-Server neu gestartet werden?";
+    if (action === 'reboot') text = "Soll der ganze Raspberry Pi neu gestartet werden?";
+    if (action === 'shutdown') text = "Soll der Raspberry Pi wirklich herunterfahren?";
+
+    if (confirm(text)) {
+        ws.send(JSON.stringify({
+            type: 'system_control',
+            command: action
+        }));
+
+        // Settings schließen, da die Verbindung gleich weg ist
+        if (action !== 'restart_code') {
+            closeSettings();
+            alert("Befehl gesendet. Verbindung wird getrennt.");
+        }
+    }
+}
