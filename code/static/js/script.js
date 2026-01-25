@@ -8,7 +8,8 @@ let currentLoggedInUser = "";
 let userRole = 'user';
 let lastSend = 0;
 
-const ws = new WebSocket(`ws://${host}:${port}/ws`);
+const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
+const ws = new WebSocket(`${protocol}://${host}:${port}/ws`);
 
 // --- WEBSOCKET LOGIK ---
 ws.onmessage = (event) => {

@@ -2,6 +2,10 @@ api:
   listen: ":1984"
   token: "aB7dE9fG2hJ5kL8mN1pQ"
 
+  tls_cert: "/home/bot/bot-server/code/certs/cert.pem"
+  tls_key: "/home/bot/bot-server/code/certs/key.pem"
+  tls_listen: ":1985"
+
 streams:
   cam:
     #Kamera

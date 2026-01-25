@@ -1,5 +1,6 @@
 import asyncio
 import sys
+import ssl
 import json
 import board
 import busio
@@ -194,7 +195,7 @@ async def websocket_handler(request):
 
                             server_ip = request.host.split(':')[0]
                             stream_name = "cam"
-                            target_url = f"http://{server_ip}:1984/stream.html?src={stream_name}"
+                            target_url = f"https://{server_ip}:1985/stream.html?src={stream_name}"
 
                             await ws.send_json({
                                 "type": "login_success",
@@ -426,13 +427,23 @@ if __name__ == '__main__':
     local_ips = get_local_ips()
 
     print("-" * 50)
-    print(f"ROBOTER-SERVER GESTARTET auf Port {port}")
+    ssl_context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
+
+    cert_file = './certs/cert.pem'
+    key_file = './certs/key.pem'
+
+    try:
+        ssl_context.load_cert_chain(cert_file, key_file)
+        print(f"[SEC] SSL Zertifikate geladen ({cert_file}).")
+        print(f"ROBOTER-SERVER GESTARTET (HTTPS) auf Port {port}")
+    except FileNotFoundError:
+        print("[SEC] FEHLER: Zertifikate nicht gefunden! Starte ohne HTTPS.")
+        ssl_context = None
+        print(f"ROBOTER-SERVER GESTARTET (HTTP - UNSICHER) auf Port {port}")
+
     for ip in local_ips:
-        print(f"  > http://{ip}:{port}")
+        protocol = "https" if ssl_context else "http"
+        print(f" -> {protocol}://{ip}:{port}")
     print("-" * 50)
 
-    # Servos in Startposition
-    current_pan = set_servo_angle('pan', 90)
-    current_tilt = set_servo_angle('tilt', 90)
-
-    web.run_app(app, host=host, port=port)
+    web.run_app(app, host=host, port=port, ssl_context=ssl_context)

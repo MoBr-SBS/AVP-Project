@@ -18,6 +18,7 @@ pip install requests
 pip install luma.core
 pip install luma.oled
 pip install gpiozero
+pip install cryptography
 
 sudo apt install ffmpeg -y
 wget https://github.com/AlexxIT/go2rtc/releases/latest/download/go2rtc_linux_arm64
