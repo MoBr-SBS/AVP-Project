@@ -1,0 +1,10 @@
+{
+    "admin": {
+        "password": "5da0c2e28a7378d9b3b6b301e66a624c$192142b1a776d06d0d0df23086b3c778dedffa5ed0559221b96720672862e957",
+        "role": "admin"
+    },
+    "Test": {
+        "password": "28a0f80e473a87afcf8772e23fc789b5$43b6891337c1ee4218297f97282162f2a9a1ebe15ce3b8e5a29a5d07e05e8a6f",
+        "role": "admin"
+    }
+}
