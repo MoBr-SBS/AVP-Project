@@ -151,6 +151,11 @@
         <canvas id="xrCanvas" style="display:none;"></canvas>
         <button class="secondary" onclick="closeAVP()" style="margin-top: 20px;">Schließen</button>
     </div>
+        <video id="xrVideoSource" crossorigin="anonymous"
+               style="position: absolute; top: 0; left: 0; width: 1px; height: 1px; opacity: 0; z-index: -1; pointer-events: none;"
+               autoplay playsinline muted>
+        </video>
+
 </div>
 </body>
 </html>

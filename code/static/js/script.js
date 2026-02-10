@@ -11,6 +11,9 @@ let lastSend = 0;
 let xrSession = null;
 let initialYaw = null;
 let initialPitch = null;
+let gl = null;
+let videoTexture = null;
+
 
 const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
 const ws = new WebSocket(`${protocol}://${host}:${port}/ws`);
@@ -399,69 +402,137 @@ function closeAVP() {
 async function startAVPSession() {
     const status = document.getElementById('avpStatus');
     const canvas = document.getElementById('xrCanvas');
+    const video = document.getElementById('xrVideoSource');
+
+    // WICHTIG: Ersetze dies durch deine echte IP oder lass es dynamisch
+    const streamUrl = `https://${window.location.hostname}:1985/api/stream.mp4?src=cam`;
+
+    console.log("Starte Video-Stream:", streamUrl);
+    video.src = streamUrl;
 
     try {
-        const gl = canvas.getContext('webgl', { xrCompatible: true });
-        // WebXR Session anfordern
+        // WebGL Initialisierung
+        gl = canvas.getContext('webgl', { xrCompatible: true });
+
+        const vs = `attribute vec2 pos; attribute vec2 uv; varying vec2 vUv; void main() { vUv = uv; gl_Position = vec4(pos, 0.0, 1.0); }`;
+        const fs = `precision mediump float; uniform sampler2D tex; varying vec2 vUv; void main() { gl_FragColor = texture2D(tex, vUv); }`;
+
+        const program = createProgram(gl, vs, fs);
+        const buffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+
+        // --- GRÖSSEN-ANPASSUNG ---
+        // Breite: 0.6 bedeutet 60% des Sichtfelds (von -0.6 bis +0.6)
+        const sX = 0.6;
+
+        // Höhe: Automatisch berechnet für 16:9 Format, damit das Bild nicht verzerrt ist
+        const sY = sX * (9 / 16);
+
+        // Das neue Array mit den verkleinerten Koordinaten (x, y, u, v)
+        const vertices = new Float32Array([
+            -sX, -sY, 0, 1,  // Unten Links
+             sX, -sY, 1, 1,  // Unten Rechts
+            -sX,  sY, 0, 0,  // Oben Links
+             sX,  sY, 1, 0   // Oben Rechts
+        ]);
+
+        gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.STATIC_DRAW);
+
+        videoTexture = gl.createTexture();
+        // Leere Textur initialisieren (verhindert WebGL Fehler)
+        gl.bindTexture(gl.TEXTURE_2D, videoTexture);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, 1, 1, 0, gl.RGB, gl.UNSIGNED_BYTE, new Uint8Array([0, 0, 0]));
+
+        // XR Session anfordern
         const session = await navigator.xr.requestSession('immersive-vr', {
             requiredFeatures: ['local']
         });
-
         xrSession = session;
-        status.innerText = "XR Aktiv - Kalibrierung läuft...";
 
         session.updateRenderState({ baseLayer: new XRWebGLLayer(session, gl) });
         const referenceSpace = await session.requestReferenceSpace('local');
 
-        // Reset der Kalibrierung beim Start
-        initialYaw = null;
-        initialPitch = null;
+        // Video starten
+        video.play().then(() => console.log("Video spielt ab")).catch(e => console.error("Video-Play-Fehler:", e));
 
-        function onFrame(time, frame) {
+        const onFrame = (time, frame) => {
             if (!xrSession) return;
             const pose = frame.getViewerPose(referenceSpace);
 
             if (pose) {
-                const matrix = pose.transform.matrix;
+                const layer = xrSession.renderState.baseLayer;
+                gl.bindFramebuffer(gl.FRAMEBUFFER, layer.framebuffer);
 
-                // Extraktion der Winkel (wie in deiner server.py)
-                let yaw = Math.atan2(-matrix[8], matrix[10]) * (180 / Math.PI);
-                let pitch = Math.asin(matrix[9]) * (180 / Math.PI);
+                // BESSERER CHECK:
+                // Wir prüfen nicht nur readyState, sondern auch ob Breite/Höhe > 0 sind
+                if (video.readyState >= 2 && video.videoWidth > 0 && video.videoHeight > 0) {
+                    gl.bindTexture(gl.TEXTURE_2D, videoTexture);
 
-                // Initial-Position beim ersten Frame speichern (Zentrierung)
-                if (initialYaw === null) {
-                    initialYaw = yaw;
-                    initialPitch = pitch;
-                    status.innerText = "Tracking läuft - Kopf bewegen!";
+                    // Pixel Store Anpassung für Performance/Kompatibilität
+                    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+
+                    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, gl.RGB, gl.UNSIGNED_BYTE, video);
+
+                    // Texture Parameters (wichtig: CLAMP_TO_EDGE für NPOT Texturen)
+                    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+                    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+                    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+                    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+                } else {
+                    // DEBUG: Falls das Video nicht läuft, sehen wir das in der Konsole
+                    // (Verbinde die Vision Pro mit dem Mac Web Inspector um das zu sehen)
+                    console.log(`Video wartet... State: ${video.readyState}, Size: ${video.videoWidth}x${video.videoHeight}`);
                 }
 
-                // Delta-Berechnung (Relativ zur Startposition)
-                // Wir mappen das Delta auf die 90° Grundstellung des Roboters
-                let deltaYaw = yaw - initialYaw;
-                let deltaPitch = pitch - initialPitch;
+                // Rendern
+                gl.useProgram(program);
+                const posLoc = gl.getAttribLocation(program, "pos");
+                const uvLoc = gl.getAttribLocation(program, "uv");
+                gl.enableVertexAttribArray(posLoc);
+                gl.enableVertexAttribArray(uvLoc);
+                gl.vertexAttribPointer(posLoc, 2, gl.FLOAT, false, 16, 0);
+                gl.vertexAttribPointer(uvLoc, 2, gl.FLOAT, false, 16, 8);
 
-                // Mapping auf Roboter-Bereich (90 ist Mitte)
-                // Invertierung falls nötig (hier - für natürliche Bewegung)
-                let targetPan = 90 - deltaYaw;
-                let targetTilt = 90 - deltaPitch;
-
-                // An den Roboter senden
-                sendAngles(targetPan, targetTilt);
-
-                status.innerText = `Pan: ${targetPan.toFixed(1)}° | Tilt: ${targetTilt.toFixed(1)}°`;
+                for (const view of pose.views) {
+                    const viewport = layer.getViewport(view);
+                    gl.viewport(viewport.x, viewport.y, viewport.width, viewport.height);
+                    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+                }
+                processRobotControl(pose);
             }
-            session.requestAnimationFrame(onFrame);
-        }
-
-        session.requestAnimationFrame(onFrame);
-
-        session.onend = () => {
-            xrSession = null;
-            status.innerText = "Session beendet.";
+            xrSession.requestAnimationFrame(onFrame);
         };
 
+        xrSession.requestAnimationFrame(onFrame);
+        status.innerText = "Immersiv aktiv!";
+
     } catch (e) {
-        status.innerText = "Fehler: " + e.message;
+        status.innerText = "XR Fehler: " + e.message;
         console.error(e);
     }
+}
+
+function createProgram(gl, vsSource, fsSource) {
+    const vShader = gl.createShader(gl.VERTEX_SHADER);
+    gl.shaderSource(vShader, vsSource); gl.compileShader(vShader);
+    const fShader = gl.createShader(gl.FRAGMENT_SHADER);
+    gl.shaderSource(fShader, fsSource); gl.compileShader(fShader);
+    const prog = gl.createProgram();
+    gl.attachShader(prog, vShader); gl.attachShader(prog, fShader);
+    gl.linkProgram(prog); return prog;
+}
+
+function processRobotControl(pose) {
+    const matrix = pose.transform.matrix;
+    let yaw = Math.atan2(-matrix[8], matrix[10]) * (180 / Math.PI);
+    let pitch = Math.asin(matrix[9]) * (180 / Math.PI);
+
+    if (initialYaw === null) {
+        initialYaw = yaw;
+        initialPitch = pitch;
+    }
+
+    let targetPan = 90 - (yaw - initialYaw);
+    let targetTilt = 90 - (pitch - initialPitch);
+    sendAngles(targetPan, targetTilt);
 }
