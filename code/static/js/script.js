@@ -474,23 +474,29 @@ async function startAVPSession() {
 
         const layer = new XRWebGLLayer(session, gl);
         session.updateRenderState({ baseLayer: layer });
-        const referenceSpace = await session.requestReferenceSpace('local');
+        const refSpaceLocal = await session.requestReferenceSpace('local');
+        const refSpaceViewer = await session.requestReferenceSpace('viewer');
 
         video.play().catch(console.error);
 
         const onFrame = (time, frame) => {
             if (!xrSession) return;
-            const pose = frame.getViewerPose(referenceSpace);
 
-            if (pose) {
+            // 1. Pose für das RENDERN (relativ zum Kopf -> Fenster folgt dir)
+            const poseViewer = frame.getViewerPose(refSpaceViewer);
+
+            // 2. Pose für den ROBOTER (relativ zum Raum -> für Pan/Tilt)
+            const poseLocal = frame.getViewerPose(refSpaceLocal);
+
+            if (poseViewer) {
+                const layer = xrSession.renderState.baseLayer;
                 gl.bindFramebuffer(gl.FRAMEBUFFER, layer.framebuffer);
 
-                // DIAGNOSE: Wir färben den Hintergrund Dunkelblau
-                // Wenn du Blau siehst, funktioniert die Session und wir müssen nur das Rechteck finden.
-                gl.clearColor(0.0, 0.0, 0.2, 1.0);
+                // Hintergrund leeren (unser Blau)
                 gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
-                if (video.readyState >= 2) {
+                // Video-Textur Update (wie gehabt)
+                if (video.readyState >= 2 && video.videoWidth > 0) {
                     gl.bindTexture(gl.TEXTURE_2D, videoTexture);
                     gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
                     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, gl.RGB, gl.UNSIGNED_BYTE, video);
@@ -499,22 +505,30 @@ async function startAVPSession() {
                 gl.useProgram(program);
                 gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
 
+                // Pointer setzen (Struktur: 3 Floats Pos, 2 Floats UV = 20 Bytes Stride)
                 gl.enableVertexAttribArray(loc.pos);
                 gl.vertexAttribPointer(loc.pos, 3, gl.FLOAT, false, 20, 0);
                 gl.enableVertexAttribArray(loc.uv);
                 gl.vertexAttribPointer(loc.uv, 2, gl.FLOAT, false, 20, 12);
 
-                for (const view of pose.views) {
+                // Zeichnen für jedes Auge mit poseViewer!
+                for (const view of poseViewer.views) {
                     const viewport = layer.getViewport(view);
                     gl.viewport(viewport.x, viewport.y, viewport.width, viewport.height);
 
                     gl.uniformMatrix4fv(loc.proj, false, view.projectionMatrix);
+                    // Durch 'viewer' Space ist die ViewMatrix hier nur noch der Augenabstand
                     gl.uniformMatrix4fv(loc.view, false, view.transform.inverse.matrix);
 
                     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
                 }
-                processRobotControl(pose);
             }
+
+            // 3. Roboter-Steuerung mit poseLocal (damit die Drehung erkannt wird)
+            if (poseLocal) {
+                processRobotControl(poseLocal);
+            }
+
             xrSession.requestAnimationFrame(onFrame);
         };
 
