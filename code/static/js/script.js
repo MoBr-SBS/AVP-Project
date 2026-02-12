@@ -13,6 +13,7 @@ let initialYaw = null;
 let initialPitch = null;
 let gl = null;
 let videoTexture = null;
+let webrtcPeer = null;
 
 
 const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
@@ -389,6 +390,60 @@ function triggerSystem(action) {
     }
 }
 
+async function connectWebRTC(videoElement) {
+    // 1. PeerConnection erstellen
+    const pc = new RTCPeerConnection({
+        iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+    });
+
+    // 2. Transceiver hinzufügen (wir wollen nur Video empfangen)
+    pc.addTransceiver('video', { direction: 'recvonly' });
+
+    // 3. Wenn ein Track (Stream) ankommt, an das Video-Element binden
+    pc.ontrack = (event) => {
+        if (event.streams && event.streams[0]) {
+            videoElement.srcObject = event.streams[0];
+            // Sicherstellen, dass das Video abspielt (wichtig für WebGL Textur!)
+            videoElement.play().catch(e => console.error("Autoplay Fehler:", e));
+        }
+    };
+
+    // 4. Offer erstellen
+    const offer = await pc.createOffer();
+    await pc.setLocalDescription(offer);
+
+    // 5. Offer an go2rtc senden und Answer erhalten
+    // WICHTIG: Port 1985 ist in deiner go2rtc.yaml für HTTPS konfiguriert
+    const go2rtcUrl = `https://${window.location.hostname}:1985/api/webrtc?src=cam`;
+
+    try {
+        const response = await fetch(go2rtcUrl, {
+            method: 'POST',
+            body: offer.sdp // go2rtc erwartet puren SDP String im Body
+        });
+
+        if (!response.ok) throw new Error("Go2RTC Antwort nicht OK");
+
+        const answerSdp = await response.text();
+
+        // 6. Remote Description (Answer) setzen
+        await pc.setRemoteDescription({
+            type: 'answer',
+            sdp: answerSdp
+        });
+
+        console.log("WebRTC Verbindung erfolgreich ausgehandelt.");
+
+        // Return pc, falls wir die Verbindung später schließen wollen (z.B. bei closeAVP)
+        return pc;
+
+    } catch (e) {
+        console.error("WebRTC Fehler:", e);
+        alert("Konnte WebRTC Stream nicht starten: " + e.message);
+    }
+    return null;
+}
+
 function openAVPSettings() {
     if(!isLoggedIn) return;
     document.getElementById('avpOverlay').style.display = 'flex';
@@ -396,23 +451,53 @@ function openAVPSettings() {
 
 function closeAVP() {
     document.getElementById('avpOverlay').style.display = 'none';
-    if (xrSession) xrSession.end();
+
+    if (xrSession) {
+        xrSession.end();
+        xrSession = null;
+    }
+
+    // --- NEU: WebRTC aufräumen ---
+    if (webrtcPeer) {
+        webrtcPeer.close();
+        webrtcPeer = null;
+    }
+
+    // Video stoppen und Quelle entfernen
+    const video = document.getElementById('xrVideoSource');
+    video.srcObject = null;
+    video.src = "";
+    // -----------------------------
 }
 
 async function startAVPSession() {
+    // 1. DIESE ZEILEN HABEN GEFEHLT: Elemente aus dem HTML holen
     const status = document.getElementById('avpStatus');
     const canvas = document.getElementById('xrCanvas');
     const video = document.getElementById('xrVideoSource');
 
-    const streamUrl = `https://${window.location.hostname}:1985/api/stream.mp4?src=cam`;
-    video.src = streamUrl;
-    video.crossOrigin = "anonymous";
+    if (!status || !canvas || !video) {
+        console.error("Kritischer Fehler: HTML Elemente nicht gefunden!");
+        return;
+    }
+
+    // 2. WebRTC Verbindung starten
+    status.innerText = "Verbinde WebRTC...";
+
+    // Wir starten WebRTC, aber warten nicht zwingend, bis es fertig ist,
+    // damit die XR-Session (der Klick) nicht "abläuft" (Timeout).
+    // Das Video bleibt schwarz, bis der Stream da ist.
+    connectWebRTC(video).then(pc => {
+        webrtcPeer = pc;
+        console.log("WebRTC verbunden innerhalb der Session");
+    });
 
     try {
+        // 3. WebGL Kontext initialisieren
         gl = canvas.getContext('webgl', { xrCompatible: true });
         if (!gl) throw new Error("WebGL nicht unterstützt");
 
-        // SHADER SETUP
+        // SHADER SETUP (Vertex Shader)
         const vs = `
             attribute vec3 pos; 
             attribute vec2 uv; 
@@ -425,6 +510,7 @@ async function startAVPSession() {
             }
         `;
 
+        // SHADER SETUP (Fragment Shader)
         const fs = `
             precision mediump float; 
             uniform sampler2D tex; 
@@ -435,7 +521,6 @@ async function startAVPSession() {
         `;
 
         const program = createProgram(gl, vs, fs);
-        // Validierung: Falls die Shader falsch sind, bricht es hier ab
         if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
             const info = gl.getProgramInfoLog(program);
             throw new Error("Shader-Link-Fehler: " + info);
@@ -448,10 +533,11 @@ async function startAVPSession() {
             view: gl.getUniformLocation(program, "uModelViewMatrix")
         };
 
-        // GEOMETRIE (Wir setzen Z auf -1.0, etwas näher dran)
+        // GEOMETRIE (Leinwand im Raum)
         const buffer = gl.createBuffer();
         gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
-        const w = 1.0, h = 0.56, z = -1.0;
+        // Z = -1.5 schiebt das Bild 1.5 Meter weg
+        const w = 1.6, h = 0.9, z = -1.5;
         const vertices = new Float32Array([
             -w/2, -h/2, z,  0, 0,
              w/2, -h/2, z,  1, 0,
@@ -460,13 +546,18 @@ async function startAVPSession() {
         ]);
         gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.STATIC_DRAW);
 
-        // TEXTUR
+        // TEXTUR ERSTELLEN
         videoTexture = gl.createTexture();
         gl.bindTexture(gl.TEXTURE_2D, videoTexture);
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
 
+        // Initiales schwarzes Pixel, damit WebGL nicht meckert, bevor Video da ist
+        const pixel = new Uint8Array([0, 0, 0]);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, 1, 1, 0, gl.RGB, gl.UNSIGNED_BYTE, pixel);
+
+        // 4. XR Session anfragen
         const session = await navigator.xr.requestSession('immersive-vr', {
             requiredFeatures: ['local']
         });
@@ -477,25 +568,24 @@ async function startAVPSession() {
         const refSpaceLocal = await session.requestReferenceSpace('local');
         const refSpaceViewer = await session.requestReferenceSpace('viewer');
 
-        video.play().catch(console.error);
+        // Video abspielen (falls Autoplay blockiert war)
+        video.play().catch(e => console.log("Warte auf Stream...", e));
 
+        // RENDER LOOP
         const onFrame = (time, frame) => {
             if (!xrSession) return;
 
-            // 1. Pose für das RENDERN (relativ zum Kopf -> Fenster folgt dir)
             const poseViewer = frame.getViewerPose(refSpaceViewer);
-
-            // 2. Pose für den ROBOTER (relativ zum Raum -> für Pan/Tilt)
             const poseLocal = frame.getViewerPose(refSpaceLocal);
 
             if (poseViewer) {
                 const layer = xrSession.renderState.baseLayer;
                 gl.bindFramebuffer(gl.FRAMEBUFFER, layer.framebuffer);
 
-                // Hintergrund leeren (unser Blau)
+                gl.clearColor(0.1, 0.1, 0.1, 1.0); // Dunkelgrauer Hintergrund
                 gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
-                // Video-Textur Update (wie gehabt)
+                // Video-Textur Update (nur wenn Video läuft und Daten hat)
                 if (video.readyState >= 2 && video.videoWidth > 0) {
                     gl.bindTexture(gl.TEXTURE_2D, videoTexture);
                     gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
@@ -505,26 +595,22 @@ async function startAVPSession() {
                 gl.useProgram(program);
                 gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
 
-                // Pointer setzen (Struktur: 3 Floats Pos, 2 Floats UV = 20 Bytes Stride)
                 gl.enableVertexAttribArray(loc.pos);
                 gl.vertexAttribPointer(loc.pos, 3, gl.FLOAT, false, 20, 0);
                 gl.enableVertexAttribArray(loc.uv);
                 gl.vertexAttribPointer(loc.uv, 2, gl.FLOAT, false, 20, 12);
 
-                // Zeichnen für jedes Auge mit poseViewer!
                 for (const view of poseViewer.views) {
                     const viewport = layer.getViewport(view);
                     gl.viewport(viewport.x, viewport.y, viewport.width, viewport.height);
 
                     gl.uniformMatrix4fv(loc.proj, false, view.projectionMatrix);
-                    // Durch 'viewer' Space ist die ViewMatrix hier nur noch der Augenabstand
                     gl.uniformMatrix4fv(loc.view, false, view.transform.inverse.matrix);
 
                     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
                 }
             }
 
-            // 3. Roboter-Steuerung mit poseLocal (damit die Drehung erkannt wird)
             if (poseLocal) {
                 processRobotControl(poseLocal);
             }
@@ -533,11 +619,12 @@ async function startAVPSession() {
         };
 
         xrSession.requestAnimationFrame(onFrame);
-        status.innerText = "Immersiv aktiv!";
+        status.innerText = "Immersiv aktiv! (WebRTC lädt...)";
 
     } catch (e) {
         status.innerText = "XR Fehler: " + e.message;
-        alert("Kritischer Fehler: " + e.message);
+        console.error(e);
+        alert("Fehler: " + e.message);
     }
 }
 
@@ -565,3 +652,4 @@ function processRobotControl(pose) {
     let targetTilt = 90 - (pitch - initialPitch);
     sendAngles(targetPan, targetTilt);
 }
+
