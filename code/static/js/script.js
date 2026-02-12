@@ -404,98 +404,113 @@ async function startAVPSession() {
     const canvas = document.getElementById('xrCanvas');
     const video = document.getElementById('xrVideoSource');
 
-    // WICHTIG: Ersetze dies durch deine echte IP oder lass es dynamisch
     const streamUrl = `https://${window.location.hostname}:1985/api/stream.mp4?src=cam`;
-
-    console.log("Starte Video-Stream:", streamUrl);
     video.src = streamUrl;
+    video.crossOrigin = "anonymous";
 
     try {
-        // WebGL Initialisierung
         gl = canvas.getContext('webgl', { xrCompatible: true });
+        if (!gl) throw new Error("WebGL nicht unterstützt");
 
-        const vs = `attribute vec2 pos; attribute vec2 uv; varying vec2 vUv; void main() { vUv = uv; gl_Position = vec4(pos, 0.0, 1.0); }`;
-        const fs = `precision mediump float; uniform sampler2D tex; varying vec2 vUv; void main() { gl_FragColor = texture2D(tex, vUv); }`;
+        // SHADER SETUP
+        const vs = `
+            attribute vec3 pos; 
+            attribute vec2 uv; 
+            varying vec2 vUv;
+            uniform mat4 uProjectionMatrix;
+            uniform mat4 uModelViewMatrix;
+            void main() { 
+                vUv = uv; 
+                gl_Position = uProjectionMatrix * uModelViewMatrix * vec4(pos, 1.0); 
+            }
+        `;
+
+        const fs = `
+            precision mediump float; 
+            uniform sampler2D tex; 
+            varying vec2 vUv; 
+            void main() { 
+                gl_FragColor = texture2D(tex, vUv); 
+            }
+        `;
 
         const program = createProgram(gl, vs, fs);
+        // Validierung: Falls die Shader falsch sind, bricht es hier ab
+        if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+            const info = gl.getProgramInfoLog(program);
+            throw new Error("Shader-Link-Fehler: " + info);
+        }
+
+        const loc = {
+            pos: gl.getAttribLocation(program, "pos"),
+            uv: gl.getAttribLocation(program, "uv"),
+            proj: gl.getUniformLocation(program, "uProjectionMatrix"),
+            view: gl.getUniformLocation(program, "uModelViewMatrix")
+        };
+
+        // GEOMETRIE (Wir setzen Z auf -1.0, etwas näher dran)
         const buffer = gl.createBuffer();
         gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
-
-        // --- GRÖSSEN-ANPASSUNG ---
-        // Breite: 0.6 bedeutet 60% des Sichtfelds (von -0.6 bis +0.6)
-        const sX = 0.6;
-
-        // Höhe: Automatisch berechnet für 16:9 Format, damit das Bild nicht verzerrt ist
-        const sY = sX * (9 / 16);
-
-        // Das neue Array mit den verkleinerten Koordinaten (x, y, u, v)
+        const w = 1.0, h = 0.56, z = -1.0;
         const vertices = new Float32Array([
-            -sX, -sY, 0, 1,  // Unten Links
-             sX, -sY, 1, 1,  // Unten Rechts
-            -sX,  sY, 0, 0,  // Oben Links
-             sX,  sY, 1, 0   // Oben Rechts
+            -w/2, -h/2, z,  0, 0,
+             w/2, -h/2, z,  1, 0,
+            -w/2,  h/2, z,  0, 1,
+             w/2,  h/2, z,  1, 1
         ]);
-
         gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.STATIC_DRAW);
 
+        // TEXTUR
         videoTexture = gl.createTexture();
-        // Leere Textur initialisieren (verhindert WebGL Fehler)
         gl.bindTexture(gl.TEXTURE_2D, videoTexture);
-        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, 1, 1, 0, gl.RGB, gl.UNSIGNED_BYTE, new Uint8Array([0, 0, 0]));
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
 
-        // XR Session anfordern
         const session = await navigator.xr.requestSession('immersive-vr', {
             requiredFeatures: ['local']
         });
         xrSession = session;
 
-        session.updateRenderState({ baseLayer: new XRWebGLLayer(session, gl) });
+        const layer = new XRWebGLLayer(session, gl);
+        session.updateRenderState({ baseLayer: layer });
         const referenceSpace = await session.requestReferenceSpace('local');
 
-        // Video starten
-        video.play().then(() => console.log("Video spielt ab")).catch(e => console.error("Video-Play-Fehler:", e));
+        video.play().catch(console.error);
 
         const onFrame = (time, frame) => {
             if (!xrSession) return;
             const pose = frame.getViewerPose(referenceSpace);
 
             if (pose) {
-                const layer = xrSession.renderState.baseLayer;
                 gl.bindFramebuffer(gl.FRAMEBUFFER, layer.framebuffer);
 
-                // BESSERER CHECK:
-                // Wir prüfen nicht nur readyState, sondern auch ob Breite/Höhe > 0 sind
-                if (video.readyState >= 2 && video.videoWidth > 0 && video.videoHeight > 0) {
+                // DIAGNOSE: Wir färben den Hintergrund Dunkelblau
+                // Wenn du Blau siehst, funktioniert die Session und wir müssen nur das Rechteck finden.
+                gl.clearColor(0.0, 0.0, 0.2, 1.0);
+                gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+
+                if (video.readyState >= 2) {
                     gl.bindTexture(gl.TEXTURE_2D, videoTexture);
-
-                    // Pixel Store Anpassung für Performance/Kompatibilität
                     gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
-
                     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, gl.RGB, gl.UNSIGNED_BYTE, video);
-
-                    // Texture Parameters (wichtig: CLAMP_TO_EDGE für NPOT Texturen)
-                    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-                    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-                    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-                    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-                } else {
-                    // DEBUG: Falls das Video nicht läuft, sehen wir das in der Konsole
-                    // (Verbinde die Vision Pro mit dem Mac Web Inspector um das zu sehen)
-                    console.log(`Video wartet... State: ${video.readyState}, Size: ${video.videoWidth}x${video.videoHeight}`);
                 }
 
-                // Rendern
                 gl.useProgram(program);
-                const posLoc = gl.getAttribLocation(program, "pos");
-                const uvLoc = gl.getAttribLocation(program, "uv");
-                gl.enableVertexAttribArray(posLoc);
-                gl.enableVertexAttribArray(uvLoc);
-                gl.vertexAttribPointer(posLoc, 2, gl.FLOAT, false, 16, 0);
-                gl.vertexAttribPointer(uvLoc, 2, gl.FLOAT, false, 16, 8);
+                gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+
+                gl.enableVertexAttribArray(loc.pos);
+                gl.vertexAttribPointer(loc.pos, 3, gl.FLOAT, false, 20, 0);
+                gl.enableVertexAttribArray(loc.uv);
+                gl.vertexAttribPointer(loc.uv, 2, gl.FLOAT, false, 20, 12);
 
                 for (const view of pose.views) {
                     const viewport = layer.getViewport(view);
                     gl.viewport(viewport.x, viewport.y, viewport.width, viewport.height);
+
+                    gl.uniformMatrix4fv(loc.proj, false, view.projectionMatrix);
+                    gl.uniformMatrix4fv(loc.view, false, view.transform.inverse.matrix);
+
                     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
                 }
                 processRobotControl(pose);
@@ -508,7 +523,7 @@ async function startAVPSession() {
 
     } catch (e) {
         status.innerText = "XR Fehler: " + e.message;
-        console.error(e);
+        alert("Kritischer Fehler: " + e.message);
     }
 }
 
