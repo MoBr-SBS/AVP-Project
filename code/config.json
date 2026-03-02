@@ -8,7 +8,7 @@
         "pin_clk": 17,
         "pin_dt": 18,
         "pin_sw": 27,
-        "bounce_time": 0.3
+        "bounce_time": 0.1
     },
     "network": {
         "host": "0.0.0.0",

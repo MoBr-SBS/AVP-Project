@@ -12,7 +12,7 @@ from aiohttp import web
 from adafruit_servokit import ServoKit
 
 
-# --- 1. KONFIGURATION LADEN ---
+# --- LOAD CONFIG ---
 def load_config():
     try:
         with open('config.json', 'r') as f:
@@ -24,7 +24,7 @@ def load_config():
 
 cfg = load_config()
 
-# --- 2. HARDWARE INITIALISIERUNG ---
+# --- INITIALIZE HARDWARE ---
 try:
     i2c = busio.I2C(board.SCL, board.SDA)
     kit = ServoKit(channels=16, i2c=i2c)
@@ -33,7 +33,7 @@ except Exception as e:
     print(f"[HW] FEHLER: Servo-Treiber nicht gefunden ({e}). Simulationsmodus aktiv.")
     kit = None
 
-# Globale Zustände
+# --- GLOBAL VARIABLES ---
 current_pan = 90
 current_tilt = 90
 client_connected = False
@@ -42,7 +42,7 @@ client_role = "none"  # --- NEU: Rolle global speichern
 client_ip = "N/A"
 
 
-# --- 3. HELFER-FUNKTIONEN (Sicherheit & IP) ---
+# --- HELPER FUNCTIONS ---
 
 def hash_password(password, salt=None):
     if salt is None:
@@ -68,10 +68,9 @@ def load_users():
         with open(cfg['paths']['user_db'], 'r') as f:
             users = json.load(f)
 
-        # --- AUTO-FIX LOGIK ---
+        # --- AUTO-FIX LOGIC FOR PREVIOUS USER-DB -> OLD ---
         changed = False
         for username, data in users.items():
-            # Falls der Eintrag noch ein einfacher String (altes Format) ist:
             if isinstance(data, str):
                 print(f"[SYS] Konvertiere User '{username}' in neues Format...")
                 users[username] = {
@@ -109,7 +108,7 @@ def get_local_ips():
     return ips
 
 
-# --- 4. SERVO LOGIK ---
+# --- SERVO LOGIC ---
 
 def set_servo_angle(axis, angle):
     s_cfg = cfg['hardware'][axis]
@@ -124,34 +123,40 @@ def set_servo_angle(axis, angle):
     return angle
 
 
-# --- 4. STATUS UPDATES ---
+# ---  STATUS UPDATES ---
 async def write_status(ws=None):
-    # Status-Paket schnüren
+
     status = {
-        "type": "status",  # Wichtig, damit JS es erkennt!
+        "type": "status",
         "pan": current_pan,
         "tilt": current_tilt,
         "user": client_name,
         "role": client_role,
-        "connected": client_connected
+        "connected": client_connected,
+        "client_ip": client_ip
     }
 
-    # 1. In SHM Datei schreiben (für OLED Service)
+    # write status in shm-file
     try:
         with open(cfg['paths']['shm_file'], 'w') as f:
             json.dump(status, f)
     except Exception:
         pass
 
-    # 2. An User via Websocket senden (nur wenn ws übergeben wurde)
+    # send status via websocket
     if ws is not None and not ws.closed:
         try:
             await ws.send_json(status)
         except Exception as e:
             print(f"[NET] Fehler beim Senden des Status: {e}")
 
+    #continuously update status
+async def heartbeat_task(app):
+    while True:
+        await write_status()
+        await asyncio.sleep(2)
 
-# --- 5. WEBSOCKET HANDLER ---
+# ---  WEBSOCKET HANDLER ---
 
 async def websocket_handler(request):
     global current_pan, current_tilt, client_connected, client_name, client_ip, client_role
@@ -179,12 +184,11 @@ async def websocket_handler(request):
 
                     if u in users:
                         user_entry = users[u]
-                        # Passwort-Check gegen das 'password' Feld im Objekt
+
                         if verify_password(user_entry.get('password', ''), p):
                             authenticated = True
                             this_session_user = u
 
-                            # Rolle auslesen (Default: user)
                             role = user_entry.get('role', 'user')
 
                             client_connected = True
@@ -200,7 +204,7 @@ async def websocket_handler(request):
                             await ws.send_json({
                                 "type": "login_success",
                                 "user": u,
-                                "role": role,  # --- NEU: Rolle an Client senden
+                                "role": role,
                                 "stream_url": target_url
                             })
                             await write_status()
@@ -209,7 +213,7 @@ async def websocket_handler(request):
                     else:
                         await ws.send_json({"type": "login_fail", "message": "Nutzer unbekannt"})
 
-                #STEUERUNG
+                #Servo-Control
                 elif authenticated and msg_type == 'move':
                     new_pan = data.get('pan', current_pan)
                     new_tilt = data.get('tilt', current_tilt)
@@ -220,29 +224,28 @@ async def websocket_handler(request):
                     current_tilt = max(cfg['hardware']['tilt']['min_angle'],
                                        min(cfg['hardware']['tilt']['max_angle'], new_tilt))
 
-                    # 3. Hardware-Ansteuerung (nur wenn Hardware vorhanden ist)
+                    # send control-signal to servo
                     if kit:
-                        # PAN: Reverse-Logik anwenden
+                        # PAN:
                         pan_target = current_pan
                         if cfg['hardware']['pan'].get('reverse'):
                             pan_target = 180 - pan_target
 
-                        # TILT: Reverse-Logik anwenden
+                        # TILT:
                         tilt_target = current_tilt
                         if cfg['hardware']['tilt'].get('reverse'):
                             tilt_target = 180 - tilt_target
 
-                        # Befehle an die in der Config hinterlegten Kanäle senden
+                        # Send commands to the channels specified in the config
                         try:
                             kit.servo[cfg['hardware']['pan']['channel']].angle = pan_target
                             kit.servo[cfg['hardware']['tilt']['channel']].angle = tilt_target
                         except Exception as e:
                             print(f"[HW] Fehler bei Servo-Ansteuerung: {e}")
 
-                    # 4. Status aktualisieren (für OLED und Websocket-Feedback)
                     await write_status(ws)
 
-                # PASSWORT ÄNDERN
+                # CHANGE PASSWORD
                 elif authenticated and msg_type == 'change_password':
                     old_p = data.get('old')
                     new_p = data.get('new')
@@ -250,7 +253,7 @@ async def websocket_handler(request):
                     users_db = load_users()
                     user_data = users_db.get(client_name)
 
-                    # Prüfen ob altes PW stimmt
+                    # Check if the old password is correct
                     if user_data and verify_password(user_data['password'], old_p):
                         users_db[client_name]['password'] = hash_password(new_p)
                         if save_users(users_db):
@@ -259,11 +262,12 @@ async def websocket_handler(request):
                     else:
                         await ws.send_json({"type": "error", "message": "Altes Passwort ist falsch!"})
 
+                # GET USERS FROM "users.json" AND SEND VIA WEBSOCKET (ADMIN)
                 elif authenticated and msg_type == 'get_users':
                     if client_role == 'admin':
                         users_db = load_users()
                         user_list = []
-                        # Wir senden nur Namen und Rollen, KEINE Passwörter!
+                        # only send names and roles
                         for u_name, u_data in users_db.items():
                             user_list.append({
                                 "name": u_name,
@@ -271,37 +275,35 @@ async def websocket_handler(request):
                             })
                         await ws.send_json({"type": "user_list", "users": user_list})
 
-                # ADMIN: USER UPDATEN (PASSWORT RESET & ROLLE)
+                # UPDATE USER (PASSWORD RESET & ROLE) (ADMIN)
                 elif authenticated and msg_type == 'admin_update_user':
                     if client_role == 'admin':
                         target_user = data.get('target_user')
                         new_pass = data.get('new_pass')
                         is_admin = data.get('is_admin')
 
-                        users_db = load_users()  # Aktuellen Stand laden
+                        users_db = load_users()
 
                         if target_user in users_db:
-                            # Rolle setzen
                             users_db[target_user]['role'] = 'admin' if is_admin else 'user'
 
-                            # Passwort nur ändern, wenn ein neues eingegeben wurde
                             if new_pass and len(str(new_pass).strip()) > 0:
                                 users_db[target_user]['password'] = hash_password(str(new_pass).strip())
                                 print(f"[ADMIN] PW-Reset für {target_user}")
 
-                            # In Datei schreiben
+                            # write new data to json
                             if save_users(users_db):
                                 await ws.send_json({
                                     "type": "admin_action_success",
                                     "message": f"Änderungen für {target_user} gespeichert!"
                                 })
-                                # WICHTIG: Sende die aktualisierte Liste sofort zurück an den Admin
+                                # IMPORTANT: Send the updated list back to the website immediately
                                 new_list = [{"name": n, "role": d.get("role", "user")} for n, d in users_db.items()]
                                 await ws.send_json({"type": "user_list", "users": new_list})
                         else:
                             await ws.send_json({"type": "error", "message": "User nicht gefunden"})
 
-                # ADMIN: SYSTEM STEUERUNG (Restart, Reboot, Shutdown)
+                # SYSTEM CONTROL (Restart, Reboot, Shutdown) (ADMIN)
                 elif authenticated and msg_type == 'system_control':
                     if client_role == 'admin':
                         command = data.get('command')
@@ -309,7 +311,7 @@ async def websocket_handler(request):
 
                         if command == 'restart_code':
                             await ws.send_json({"type": "admin_action_success", "message": "Server startet neu..."})
-                            # Startet das aktuelle Python-Skript neu
+                            # restart python script
                             os.execv(sys.executable, ['python3'] + sys.argv)
 
                         elif command == 'reboot':
@@ -322,7 +324,7 @@ async def websocket_handler(request):
                                 {"type": "admin_action_success", "message": "Raspberry Pi fährt herunter..."})
                             os.system('sudo shutdown -h now')
 
-                #CREATE NEW USER
+                #CREATE NEW USER (ADMIN)
                 elif authenticated and msg_type == 'admin_create_user':
                     if client_role == 'admin':
                         new_u = str(data.get('username', '')).strip()
@@ -336,7 +338,7 @@ async def websocket_handler(request):
                         elif new_u in users_db:
                             await ws.send_json({"type": "error", "message": f"User '{new_u}' existiert bereits!"})
                         else:
-                            # User anlegen
+                            # add new user
                             users_db[new_u] = {
                                 "password": hash_password(new_p),
                                 "role": "admin" if is_admin else "user"
@@ -345,16 +347,16 @@ async def websocket_handler(request):
                             if save_users(users_db):
                                 await ws.send_json({"type": "admin_action_success",
                                                     "message": f"User '{new_u}' erfolgreich angelegt."})
-                                # Liste für den Admin sofort aktualisieren
+                                # IMPORTANT: Send the updated list back to the website immediately
                                 new_list = [{"name": n, "role": d.get("role", "user")} for n, d in users_db.items()]
                                 await ws.send_json({"type": "user_list", "users": new_list})
 
-                #DELETE USER
+                #DELETE USER (ADMIN)
                 elif authenticated and msg_type == 'admin_delete_user':
                     if client_role == 'admin':
                         target = data.get('target_user')
 
-                        # Einzige Sperre: Man kann sich nicht selbst löschen
+                        # Prevent the currently logged-in user from being deleted
                         if target == client_name:
                             await ws.send_json({"type": "error",
                                                 "message": "Selbstmord-Kommando abgelehnt: Du kannst dich nicht selbst löschen!"})
@@ -366,14 +368,14 @@ async def websocket_handler(request):
                                     await ws.send_json(
                                         {"type": "admin_action_success", "message": f"User '{target}' wurde gelöscht."})
                                     print(f"[ADMIN] User '{target}' erfolgreich gelöscht!")
-                                    # Liste aktualisieren
+                                    # IMPORTANT: Send the updated list back to the website immediately
                                     new_list = [{"name": n, "role": d.get("role", "user")} for n, d in users_db.items()]
                                     await ws.send_json({"type": "user_list", "users": new_list})
                             else:
                                 await ws.send_json({"type": "error", "message": "User nicht gefunden."})
 
 
-                # KONFIGURATION ÜBERGEBEN/AUSLESEN (NUR ADMIN)
+                # SEND CONFIG TO WEBSITE (ADMIN)
                 elif authenticated and msg_type == 'get_config':
                     if client_role == 'admin':
                         await ws.send_json({
@@ -381,14 +383,14 @@ async def websocket_handler(request):
                             "config": cfg
                         })
 
-                    # KONFIGURATION SPEICHERN (NUR ADMIN)
+                # SAVE CONFIG (ADMIN)
                 elif authenticated and msg_type == 'update_config':
                     if client_role == 'admin':
                         new_cfg_data = data.get('config')
                         if new_cfg_data:
-                            # Wir aktualisieren das globale cfg-Objekt
+                            # save global object
                             cfg.update(new_cfg_data)
-                            # In Datei speichern
+                            # save to file
                             with open('config.json', 'w') as f:
                                 json.dump(cfg, f, indent=4)
 
@@ -409,17 +411,20 @@ async def websocket_handler(request):
 
     return ws
 
-
-# --- 6. SERVER START ---
+# --- SERVER START ---
 
 async def index(request):
     return web.FileResponse('./templates/index.html')
 
+    #Heartbeat
+async def start_background_tasks(app):
+    asyncio.create_task(heartbeat_task(app))
 
 app = web.Application()
 app.router.add_static('/static/', path='static', name='static')
 app.router.add_get('/', index)
 app.router.add_get('/ws', websocket_handler)
+app.on_startup.append(start_background_tasks) #Heartbeat
 
 if __name__ == '__main__':
     host = cfg['network']['host']
@@ -446,4 +451,5 @@ if __name__ == '__main__':
         print(f" -> {protocol}://{ip}:{port}")
     print("-" * 50)
 
+    #start webserver
     web.run_app(app, host=host, port=port, ssl_context=ssl_context)

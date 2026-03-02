@@ -19,11 +19,11 @@ class Config:
     PIN_DT = 18
     PIN_SW = 27
     I2C_ADDR = 0x3C
-    BOUNCE_TIME = 0.3
+    BOUNCE_TIME = 0.1
     WIDTH = 128
     HEIGHT = 64
     FPS = 30
-    POLL_INTERVAL = 0.5
+    POLL_INTERVAL = 0.2
     SHM_FILE = "/dev/shm/robot_status.json"
 
     # Pfade
@@ -106,6 +106,13 @@ class SystemMonitor(threading.Thread):
             self.data["server_online"] = False
             return
         try:
+            file_mod_time = os.path.getmtime(Config.SHM_FILE)
+            age = time.time() - file_mod_time
+
+            if age > 5.0:
+                self.data["server_online"] = False
+                return
+
             with open(Config.SHM_FILE, "r") as f:
                 json_data = json.load(f)
             self.data.update(json_data)
@@ -189,17 +196,17 @@ class MenuController:
     def _draw_dashboard(self, draw):
         font = self.res.font
         if self.dashboard_page == 0:
-            status = "VERBUNDEN" if self.monitor.get("client_connected") else "WARTEN..."
+            status = "VERBUNDEN" if self.monitor.get("connected") else "WARTEN..."
             draw.text((10, 0), status, font=font, fill="white")
             draw.line((0, 14, 128, 14), fill="white")
             draw.bitmap((2, 20), self.res.get_icon("user.png"), fill="white")
-            draw.text((24, 20), str(self.monitor.get("client_name")), font=font, fill="white")
+            draw.text((24, 20), str(self.monitor.get("user")), font=font, fill="white")
             draw.bitmap((2, 40), self.res.get_icon("network.png"), fill="white")
             draw.text((24, 40), str(self.monitor.get("client_ip")), font=font, fill="white")
         elif self.dashboard_page == 1:
             y = 0
             items = [("temp.png", f"CPU: {self.monitor.get('cpu_temp')}"),
-                     ("ok.png" if self.monitor.get("server_online") else "shutdown.png", "Server"),
+                     ("online.png" if self.monitor.get("server_online") else "offline.png", "Server-Status"),
                      ("network.png", self.monitor.get("ip"))]
             for icon, text in items:
                 draw.bitmap((2, y), self.res.get_icon(icon), fill="white")
