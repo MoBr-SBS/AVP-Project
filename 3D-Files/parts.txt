@@ -11,6 +11,7 @@ Electronics:
     - 1x OLED Screen (128x64 pixel)
     - 2x MG996R Servomotor (or different servos with same dimensions)
     - 1x USB-C Port (Screw in)
+    - 1x USB-Webcam (3D-Part is modeled around Fifine K420)
 
 Other:
     - 1x Bearing (10 x 15 x 4mm)
