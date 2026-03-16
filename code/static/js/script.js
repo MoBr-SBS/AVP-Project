@@ -32,7 +32,7 @@ ws.onmessage = (event) => {
         userRole = data.role;
         document.getElementById('loginOverlay').style.display = 'none';
         document.getElementById('displayUser').innerText = `${data.user} (${userRole})`;
-        document.getElementById('connectionStatus').innerText = "Verbunden";
+        document.getElementById('connectionStatus').innerText = "Connected";
         document.getElementById('connectionStatus').style.color = "#00ff00";
         document.getElementById('camStream').src = data.stream_url;
 
@@ -43,7 +43,6 @@ ws.onmessage = (event) => {
         }
     }
     else if (data.type === 'status') {
-        // WICHTIG: parseFloat erzwingt, dass es eine Zahl ist!
         currentPan = parseFloat(data.pan);
         currentTilt = parseFloat(data.tilt);
     }
@@ -51,7 +50,7 @@ ws.onmessage = (event) => {
         fillAdminFields(data.config);
     }
     else if (data.type === 'config_update_success') {
-        alert("Konfiguration gespeichert!");
+        alert("Configuration saved!");
     }
     else if (data.type === 'user_list') {
         renderUserList(data.users);
@@ -61,7 +60,7 @@ ws.onmessage = (event) => {
     }
 };
 
-// --- STEUERUNGS FUNKTIONEN ---
+// --- CONTROL FUNCTIONS ---
 function sendAngles(p, t) {
     const now = Date.now();
     if (now - lastSend < 50) return; // Rate Limiting
@@ -72,7 +71,7 @@ function sendAngles(p, t) {
     }
 }
 
-// Maus-Steuerung
+// Mouse-Control
 const mouseZone = document.getElementById('mouseZone');
 if (mouseZone) {
     mouseZone.addEventListener('mousemove', (e) => {
@@ -84,7 +83,7 @@ if (mouseZone) {
     });
 }
 
-// Tastatur-Steuerung Zustand
+// Arrow-Key-Control
 const keyState = {};
 window.addEventListener('keydown', (e) => {
     if(document.activeElement.tagName === 'INPUT') return;
@@ -92,14 +91,12 @@ window.addEventListener('keydown', (e) => {
 });
 window.addEventListener('keyup', (e) => keyState[e.key] = false);
 
-// Der Steuerungs-Loop (alle 50ms)
 setInterval(() => {
     if (!isLoggedIn) return;
 
     let moveStep = 5;
     let changed = false;
 
-    // Wir arbeiten mit Kopien der aktuellen Werte
     let targetPan = currentPan;
     let targetTilt = currentTilt;
 
@@ -113,14 +110,13 @@ setInterval(() => {
     }
 }, 50);
 
-// --- ADMIN & SETTINGS FUNKTIONEN ---
+// --- ADMIN & SETTINGS FUNCTIONS ---
 function openUserSettings() {
     if(!isLoggedIn) return;
     document.getElementById('settingsOverlay').style.display = 'flex';
     document.getElementById('userSettingsArea').style.display = 'block';
     document.getElementById('adminArea').style.display = 'none';
 
-    // NEU: Wenn Admin, zeige Verwaltungs-Bereich und lade User
     if (userRole === 'admin') {
         document.getElementById('adminUserMgmt').style.display = 'block';
         ws.send(JSON.stringify({ type: 'get_users' }));
@@ -134,11 +130,9 @@ function openSystemSettings() {
 
     document.getElementById('settingsOverlay').style.display = 'flex';
 
-    // User Bereich AUS, Admin Bereich AN
     document.getElementById('userSettingsArea').style.display = 'none';
     document.getElementById('adminArea').style.display = 'block';
 
-    // Config vom Server laden
     ws.send(JSON.stringify({ type: 'get_config' }));
 }
 
@@ -147,7 +141,7 @@ function closeSettings() {
 }
 
 function fillAdminFields(config) {
-    // Hardware & Reverse Checkboxen
+    // Hardware & Reverse Checkbox
     document.getElementById('cfg-pan-ch').value = config.hardware.pan.channel;
     document.getElementById('cfg-pan-rev').checked = config.hardware.pan.reverse;
     document.getElementById('cfg-pan-min').value = config.hardware.pan.min_angle;
@@ -158,7 +152,7 @@ function fillAdminFields(config) {
     document.getElementById('cfg-tilt-min').value = config.hardware.tilt.min_angle;
     document.getElementById('cfg-tilt-max').value = config.hardware.tilt.max_angle;
 
-    // OLED & Netz
+    // OLED & Network
     document.getElementById('cfg-oled-addr').value = config.oled.address;
     document.getElementById('cfg-oled-clk').value = config.oled.pin_clk;
     document.getElementById('cfg-oled-dt').value = config.oled.pin_dt;
@@ -187,7 +181,6 @@ function saveAdminConfig() {
         oled: {
             address: document.getElementById('cfg-oled-addr').value,
             pin_clk: parseInt(document.getElementById('cfg-oled-clk').value),
-            // KORREKTUR: Werte aus Inputs lesen, nicht hardcoden!
             pin_dt: parseInt(document.getElementById('cfg-oled-dt').value),
             pin_sw: parseInt(document.getElementById('cfg-oled-sw').value),
             bounce_time: 0.3
@@ -208,9 +201,9 @@ function performLogin() {
 
 function renderUserList(users) {
     const container = document.getElementById('userListContainer');
-    container.innerHTML = ''; // Liste leeren
+    container.innerHTML = '';
 
-    // 1. Bestehende User auflisten
+    // 1. List existing users
     users.forEach(u => {
         const row = document.createElement('div');
         row.style = "display: flex; align-items: center; gap: 10px; background: #2a2a2a; padding: 10px; margin-bottom: 5px; border-radius: 5px;";
@@ -240,7 +233,7 @@ function renderUserList(users) {
         // Save Button
         const saveBtn = document.createElement('button');
         saveBtn.innerText = "💾";
-        saveBtn.title = "Änderungen speichern";
+        saveBtn.title = "Save changes";
         saveBtn.style = "width: auto; padding: 5px 10px; background: #007bff; margin: 0;";
         saveBtn.onclick = () => submitUserUpdate(u.name);
 
@@ -250,18 +243,16 @@ function renderUserList(users) {
         row.appendChild(saveBtn);
         container.appendChild(row);
 
+        // Delete Button
         const delBtn = document.createElement('button');
         delBtn.innerText = "🗑️";
-        delBtn.title = "Löschen";
+        delBtn.title = "Delete";
 
-        // Delete Button
         if (u.name === currentLoggedInUser) {
-            // Button ausgrauen und deaktivieren
             delBtn.style = "width: auto; padding: 5px 10px; background: #555; margin: 0; margin-left: 5px; cursor: not-allowed; opacity: 0.5;";
             delBtn.disabled = true;
-            delBtn.title = "Du kannst dich nicht selbst löschen";
+            delBtn.title = "You cant delete yourself!";
         } else {
-            // Normaler roter Button
             delBtn.style = "width: auto; padding: 5px 10px; background: #dc3545; margin: 0; margin-left: 5px;";
             delBtn.onclick = () => deleteUser(u.name);
         }
@@ -269,20 +260,20 @@ function renderUserList(users) {
         row.appendChild(delBtn);
     });
 
-    // 2. Box für NEUEN User (ganz unten)
+    // 2. Box for new users
     const newRow = document.createElement('div');
-    // Etwas anderes Styling (Dashed Border), damit es sich abhebt
+    // Dashed Border
     newRow.style = "display: flex; align-items: center; gap: 10px; background: #222; padding: 10px; margin-top: 20px; border: 1px dashed #666; border-radius: 5px;";
 
     const newNameInput = document.createElement('input');
     newNameInput.type = "text";
-    newNameInput.placeholder = "Neuer Username";
+    newNameInput.placeholder = "New Username";
     newNameInput.id = "new-user-name";
     newNameInput.style = "flex: 1; padding: 5px; margin: 0; background: #333; color: #fff; border: 1px solid #555;";
 
     const newPassInput = document.createElement('input');
     newPassInput.type = "password";
-    newPassInput.placeholder = "Passwort";
+    newPassInput.placeholder = "Password";
     newPassInput.id = "new-user-pass";
     newPassInput.style = "width: 100px; padding: 5px; margin: 0; background: #333; color: #fff; border: 1px solid #555;";
 
@@ -296,7 +287,7 @@ function renderUserList(users) {
 
     const addBtn = document.createElement('button');
     addBtn.innerText = "➕";
-    addBtn.title = "User anlegen";
+    addBtn.title = "Add User";
     addBtn.style = "width: auto; padding: 5px 10px; background: #28a745; margin: 0;"; // Grün
     addBtn.onclick = createNewUser;
 
@@ -314,7 +305,7 @@ function createNewUser() {
     const isAdmin = document.getElementById('new-user-admin').checked;
 
     if (!name || !pass) {
-        alert("Bitte Username und Passwort für den neuen Nutzer eingeben!");
+        alert("Please enter username and password for the new user!");
         return;
     }
 
@@ -331,7 +322,7 @@ function changePassword() {
     const newPass = document.getElementById('newPass').value;
 
     if(!oldPass || !newPass) {
-        alert("Bitte fülle beide Felder aus!");
+        alert("Please fill out both fields!");
         return;
     }
 
@@ -342,7 +333,7 @@ function changePassword() {
     }));
 }
 
-// 2. Admin: User aktualisieren (wird vom Speicher-Button in der Liste aufgerufen)
+// 2. Admin: User Update
 function submitUserUpdate(username) {
     const newPassInput = document.getElementById(`pw-reset-${username}`);
     const roleCheck = document.getElementById(`role-check-${username}`);
@@ -355,14 +346,13 @@ function submitUserUpdate(username) {
     ws.send(JSON.stringify({
         type: 'admin_update_user',
         target_user: username,
-        new_pass: newPass, // Wenn leer, wird PW vom Server ignoriert
+        new_pass: newPass,
         is_admin: isAdmin
     }));
 }
 
 function deleteUser(username) {
-    // Sicherheitsabfrage im Browser
-    if (confirm(`Möchtest du den Benutzer '${username}' wirklich endgültig löschen?`)) {
+    if (confirm(`Do you really want to permanently delete the user '${username}'?`)) {
         ws.send(JSON.stringify({
             type: 'admin_delete_user',
             target_user: username
@@ -372,9 +362,9 @@ function deleteUser(username) {
 
 function triggerSystem(action) {
     let text = "";
-    if (action === 'restart_code') text = "Soll der Robot-Server neu gestartet werden?";
-    if (action === 'reboot') text = "Soll der ganze Raspberry Pi neu gestartet werden?";
-    if (action === 'shutdown') text = "Soll der Raspberry Pi wirklich herunterfahren?";
+    if (action === 'restart_code') text = "Restart code?";
+    if (action === 'reboot') text = "Restart System?";
+    if (action === 'shutdown') text = "Shutdown System?";
 
     if (confirm(text)) {
         ws.send(JSON.stringify({
@@ -382,24 +372,22 @@ function triggerSystem(action) {
             command: action
         }));
 
-        // Settings schließen, da die Verbindung gleich weg ist
         if (action !== 'restart_code') {
             closeSettings();
-            alert("Befehl gesendet. Verbindung wird getrennt.");
+            alert("Action sent. Terminating connection.");
         }
     }
 }
 
 async function connectWebRTC(videoElement) {
-    // 1. PeerConnection erstellen
+    //PeerConnection (not needed)
     const pc = new RTCPeerConnection({
         iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
     });
 
-    // 2. Transceiver hinzufügen (wir wollen nur Video empfangen)
+    //Transceiver
     pc.addTransceiver('video', { direction: 'recvonly' });
 
-    // 3. Wenn ein Track (Stream) ankommt, an das Video-Element binden
     pc.ontrack = (event) => {
         if (event.streams && event.streams[0]) {
             videoElement.srcObject = event.streams[0];
@@ -408,38 +396,35 @@ async function connectWebRTC(videoElement) {
         }
     };
 
-    // 4. Offer erstellen
+    //Offer
     const offer = await pc.createOffer();
     await pc.setLocalDescription(offer);
 
-    // 5. Offer an go2rtc senden und Answer erhalten
-    // WICHTIG: Port 1985 ist in deiner go2rtc.yaml für HTTPS konfiguriert
     const go2rtcUrl = `https://${window.location.hostname}:1985/api/webrtc?src=cam`;
 
     try {
         const response = await fetch(go2rtcUrl, {
             method: 'POST',
-            body: offer.sdp // go2rtc erwartet puren SDP String im Body
+            body: offer.sdp
         });
 
         if (!response.ok) throw new Error("Go2RTC Antwort nicht OK");
 
         const answerSdp = await response.text();
 
-        // 6. Remote Description (Answer) setzen
+        // Remote Description (Answer) setzen
         await pc.setRemoteDescription({
             type: 'answer',
             sdp: answerSdp
         });
 
-        console.log("WebRTC Verbindung erfolgreich ausgehandelt.");
+        console.log("WebRTC Connection Successful.");
 
-        // Return pc, falls wir die Verbindung später schließen wollen (z.B. bei closeAVP)
         return pc;
 
     } catch (e) {
-        console.error("WebRTC Fehler:", e);
-        alert("Konnte WebRTC Stream nicht starten: " + e.message);
+        console.error("WebRTC Error:", e);
+        alert("Couldn't start WebRTC Connection: " + e.message);
     }
     return null;
 }
@@ -457,45 +442,39 @@ function closeAVP() {
         xrSession = null;
     }
 
-    // --- NEU: WebRTC aufräumen ---
+    // ---WebRTC cleanup ---
     if (webrtcPeer) {
         webrtcPeer.close();
         webrtcPeer = null;
     }
 
-    // Video stoppen und Quelle entfernen
     const video = document.getElementById('xrVideoSource');
     video.srcObject = null;
     video.src = "";
-    // -----------------------------
 }
 
 async function startAVPSession() {
-    // 1. DIESE ZEILEN HABEN GEFEHLT: Elemente aus dem HTML holen
     const status = document.getElementById('avpStatus');
     const canvas = document.getElementById('xrCanvas');
     const video = document.getElementById('xrVideoSource');
 
     if (!status || !canvas || !video) {
-        console.error("Kritischer Fehler: HTML Elemente nicht gefunden!");
+        console.error("Critical Error: HTML Elements not found!");
         return;
     }
 
-    // 2. WebRTC Verbindung starten
-    status.innerText = "Verbinde WebRTC...";
+    // 2. WebRTC starting connection
+    status.innerText = "Connecting WebRTC...";
 
-    // Wir starten WebRTC, aber warten nicht zwingend, bis es fertig ist,
-    // damit die XR-Session (der Klick) nicht "abläuft" (Timeout).
-    // Das Video bleibt schwarz, bis der Stream da ist.
     connectWebRTC(video).then(pc => {
         webrtcPeer = pc;
         console.log("WebRTC verbunden innerhalb der Session");
     });
 
     try {
-        // 3. WebGL Kontext initialisieren
+        // 3. Initialize WebGL Context
         gl = canvas.getContext('webgl', { xrCompatible: true });
-        if (!gl) throw new Error("WebGL nicht unterstützt");
+        if (!gl) throw new Error("WebGL not supported");
 
         // SHADER SETUP (Vertex Shader)
         const vs = `
@@ -523,7 +502,7 @@ async function startAVPSession() {
         const program = createProgram(gl, vs, fs);
         if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
             const info = gl.getProgramInfoLog(program);
-            throw new Error("Shader-Link-Fehler: " + info);
+            throw new Error("Shader-Link-Error: " + info);
         }
 
         const loc = {
@@ -533,10 +512,10 @@ async function startAVPSession() {
             view: gl.getUniformLocation(program, "uModelViewMatrix")
         };
 
-        // GEOMETRIE (Leinwand im Raum)
+        // GEOMETRY
         const buffer = gl.createBuffer();
         gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
-        // Z = -1.5 schiebt das Bild 1.5 Meter weg
+        // Z = -1.5 moves the image 1.5 meters away
         const w = 1.6, h = 0.9, z = -1.5;
         const vertices = new Float32Array([
             -w/2, -h/2, z,  0, 0,
@@ -546,18 +525,17 @@ async function startAVPSession() {
         ]);
         gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.STATIC_DRAW);
 
-        // TEXTUR ERSTELLEN
+        // TEXTUR
         videoTexture = gl.createTexture();
         gl.bindTexture(gl.TEXTURE_2D, videoTexture);
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
 
-        // Initiales schwarzes Pixel, damit WebGL nicht meckert, bevor Video da ist
         const pixel = new Uint8Array([0, 0, 0]);
         gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, 1, 1, 0, gl.RGB, gl.UNSIGNED_BYTE, pixel);
 
-        // 4. XR Session anfragen
+        // 4. XR Session
         const session = await navigator.xr.requestSession('immersive-vr', {
             requiredFeatures: ['local']
         });
@@ -568,8 +546,8 @@ async function startAVPSession() {
         const refSpaceLocal = await session.requestReferenceSpace('local');
         const refSpaceViewer = await session.requestReferenceSpace('viewer');
 
-        // Video abspielen (falls Autoplay blockiert war)
-        video.play().catch(e => console.log("Warte auf Stream...", e));
+        // Play Video
+        video.play().catch(e => console.log("Waiting for Stream...", e));
 
         // RENDER LOOP
         const onFrame = (time, frame) => {
@@ -582,10 +560,9 @@ async function startAVPSession() {
                 const layer = xrSession.renderState.baseLayer;
                 gl.bindFramebuffer(gl.FRAMEBUFFER, layer.framebuffer);
 
-                gl.clearColor(0.1, 0.1, 0.1, 1.0); // Dunkelgrauer Hintergrund
+                gl.clearColor(0.1, 0.1, 0.1, 1.0);
                 gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
-                // Video-Textur Update (nur wenn Video läuft und Daten hat)
                 if (video.readyState >= 2 && video.videoWidth > 0) {
                     gl.bindTexture(gl.TEXTURE_2D, videoTexture);
                     gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
@@ -619,12 +596,12 @@ async function startAVPSession() {
         };
 
         xrSession.requestAnimationFrame(onFrame);
-        status.innerText = "Immersiv aktiv! (WebRTC lädt...)";
+        status.innerText = "Immersiv activ! (WebRTC loading...)";
 
     } catch (e) {
-        status.innerText = "XR Fehler: " + e.message;
+        status.innerText = "XR Error: " + e.message;
         console.error(e);
-        alert("Fehler: " + e.message);
+        alert("Error: " + e.message);
     }
 }
 

@@ -34,13 +34,12 @@ def generate_local_cert(ip_address):
                                   serialization.NoEncryption()))
     with open("cert.pem", "wb") as f:
         f.write(cert.public_bytes(serialization.Encoding.PEM))
-    print(f"Zertifikat für {ip_address} erstellt.")
+    print(f"Created Cert for {ip_address}.")
 
 
 def get_ip():
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     try:
-        # Verbindet sich nicht wirklich, ermittelt nur die Route
         s.connect(('10.255.255.255', 1))
         IP = s.getsockname()[0]
     except Exception:
@@ -51,6 +50,6 @@ def get_ip():
 
 if __name__ == "__main__":
     ip = get_ip()
-    print(f"Erstelle Zertifikate für IP: {ip}")
+    print(f"Creating Cert for IP: {ip}")
     generate_local_cert(ip)
-    print("Fertig! 'key.pem' und 'cert.pem' wurden erstellt.")
+    print("Done! 'key.pem' and 'cert.pem' created.")

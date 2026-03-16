@@ -23,8 +23,8 @@
     <div id="loginOverlay" class="overlay">
         <div class="box login-box">
             <h2>System Login</h2>
-            <input type="text" id="userInput" placeholder="Benutzername" autocomplete="off">
-            <input type="password" id="passInput" placeholder="Passwort">
+            <input type="text" id="userInput" placeholder="Username" autocomplete="off">
+            <input type="password" id="passInput" placeholder="Password">
             <button onclick="performLogin()">Verbinden</button>
         </div>
     </div>
@@ -34,24 +34,24 @@
             <span class="close-icon" onclick="closeSettings()">&times;</span>
 
             <div id="userSettingsArea">
-                <h1>Profil Einstellungen</h1>
+                <h1>Profil Settings</h1>
 
                 <div class="settings-section">
-                    <h3>Mein Passwort ändern</h3>
-                    <input type="password" id="oldPass" placeholder="Altes Passwort">
-                    <input type="password" id="newPass" placeholder="Neues Passwort">
-                    <button onclick="changePassword()">Passwort speichern</button>
+                    <h3>Change Password</h3>
+                    <input type="password" id="oldPass" placeholder="Old Password">
+                    <input type="password" id="newPass" placeholder="New Password">
+                    <button onclick="changePassword()">Save Password</button>
                 </div>
 
                 <div id="adminUserMgmt" style="display: none; margin-top: 30px; border-top: 1px solid #444; padding-top: 10px;">
-                    <h3 style="color: #d21616;">Benutzerverwaltung (Admin)</h3>
+                    <h3 style="color: #d21616;">User administration (admin)</h3>
                     <div id="userListContainer">
                         </div>
                 </div>
             </div>
 
             <div id="adminArea" style="display: none;">
-                <h1 style="color: #d21616;">System-Konfiguration</h1>
+                <h1 style="color: #d21616;">System-Configuration</h1>
 
                 <div class="settings-group" style="border-color: #ff4444; background: rgba(255, 0, 0, 0.1);">
                 <h4 style="color: #ff4444; margin-top: 0;">Power Management</h4>
@@ -75,10 +75,10 @@
                         <label>Tilt Channel: <input type="number" id="cfg-tilt-ch"></label>
 
                         <label class="checkbox-label">
-                            <input type="checkbox" id="cfg-pan-rev"> Pan umkehren
+                            <input type="checkbox" id="cfg-pan-rev"> Reverse Pan
                         </label>
                         <label class="checkbox-label">
-                            <input type="checkbox" id="cfg-tilt-rev"> Tilt umkehren
+                            <input type="checkbox" id="cfg-tilt-rev"> Reverse Tilt
                         </label>
 
                         <label>Pan Min: <input type="number" id="cfg-pan-min"></label>
@@ -99,17 +99,17 @@
                 </div>
 
                 <div class="settings-group">
-                    <h4>Netzwerk & Sicherheit</h4>
+                    <h4>Network</h4>
                     <div class="admin-grid">
                         <label>Server Port: <input type="number" id="cfg-net-port"></label>
-                        <label>go2RTC Token: <input type="text" id="cfg-sec-token"></label>
+                        <label>go2RTC Token (not needed): <input type="text" id="cfg-sec-token"></label>
                     </div>
                 </div>
 
-                <button class="admin-save-btn" onclick="saveAdminConfig()">Gesamte Konfiguration speichern</button>
+                <button class="admin-save-btn" onclick="saveAdminConfig()">Save Configuration</button>
             </div>
 
-            <button class="secondary" onclick="closeSettings()" style="margin-top: 20px;">Schließen</button>
+            <button class="secondary" onclick="closeSettings()" style="margin-top: 20px;">Close</button>
         </div>
     </div>
 
@@ -120,13 +120,13 @@
         </div>
 
         <div class="status-panel">
-            <div>Status: <span id="connectionStatus" style="color:red">Getrennt</span></div>
+            <div>Status: <span id="connectionStatus" style="color:red">Disconnected</span></div>
             <div>User: <span id="displayUser">-</span></div>
         </div>
 
         <div class="hint">
-            Steuerung: Klicken & Ziehen im Video<br>
-            oder Pfeiltasten verwenden.
+            Controls: Click & drag in the video<br>
+            or use arrow keys.
         </div>
     </div>
 
@@ -135,8 +135,8 @@
     <div id="avpOverlay" class="overlay" style="display: none;">
     <div class="box settings-box">
         <span class="close-icon" onclick="closeAVP()">&times;</span>
-        <h1>Vision Pro Steuerung</h1>
-        <p style="color: #888; font-size: 0.9rem;">Steuere den Roboter durch Kopfbewegungen im immersiven Raum.</p>
+        <h1>Vision Pro Control</h1>
+        <p style="color: #888; font-size: 0.9rem;">Control the robot by moving your head in the immersive space.</p>
 
         <div class="settings-section">
             <button id="xrButton" onclick="startAVPSession()" style="background-color: #ffffff; color: #000; font-weight: bold; border-radius: 50px;">
@@ -149,7 +149,7 @@
         </div>
 
         <canvas id="xrCanvas" style="display:none;"></canvas>
-        <button class="secondary" onclick="closeAVP()" style="margin-top: 20px;">Schließen</button>
+        <button class="secondary" onclick="closeAVP()" style="margin-top: 20px;">Close</button>
     </div>
         <video id="xrVideoSource" crossorigin="anonymous"
                style="position: absolute; top: 0; left: 0; width: 1px; height: 1px; opacity: 0; z-index: -1; pointer-events: none;"
