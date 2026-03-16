@@ -1,0 +1,16 @@
+3D-Printed parts:
+    - 1x Main Body
+    - 1x Lid
+    - 1x Tilt-Servo Housing
+    - 1x Cam Mount (you might need a custom cam mount if you're using a different camera)
+
+Electronics:
+    - 1x Raspberry Pi 5
+    - 1x PCA9685 16 Channel 12 Bit PWM Servodriver
+    - 1x Rotary Encoder
+    - 1x OLED Screen (128x64 pixel)
+    - 2x MG996R Servomotor (or different servos with same dimensions)
+    - 1x USB-C Port (Screw in)
+
+Other:
+    - 1x Bearing (10 x 15 x 4mm)
