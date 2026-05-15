@@ -1,0 +1,181 @@
+================================================================================
+PROJEKT-ÜBERGABE: Telepräsenz-Roboter v2-Rewrite
+================================================================================
+Repo:    C:\Users\Moritz\PycharmProjects\AVP-Project
+Branch:  v2-rewrite
+Datum:   2026-05-15
+
+STATUS: Rewrite abgeschlossen und auf dem Raspberry Pi getestet.
+  - Login ✅
+  - Servo-Steuerung ✅
+  - Kamera-Stream ✅
+  - OLED-Display ✅
+
+--------------------------------------------------------------------------------
+1. AUSGANGSLAGE
+--------------------------------------------------------------------------------
+Der v2-Rewrite des Telepräsenz-Roboters ist vollständig portiert und läuft.
+Die alten Dateien (robot_main.py, oled-menu.py) wurden nach erfolgreichem Test
+gelöscht.
+
+--------------------------------------------------------------------------------
+2. NEUE VERZEICHNISSTRUKTUR (finaler Stand)
+--------------------------------------------------------------------------------
+code/
+├── main.py                  ✅ fertig
+├── config.json              ✅ fertig
+├── users.json               (unverändert)
+├── server/
+│   ├── __init__.py          ✅ fertig
+│   ├── stream.py            ✅ fertig
+│   ├── auth.py              ✅ fertig
+│   └── websocket.py         ✅ fertig
+├── hardware/
+│   ├── __init__.py          ✅ fertig
+│   └── oled.py              ✅ fertig
+├── static/
+│   ├── css/style.css        (unverändert)
+│   └── js/script.js         ✅ neu (Login-Flow umgestellt)
+├── templates/
+│   └── index.html           ✅ neu (iframe→img, Logout-Button)
+├── menu-icons/              (unverändert)
+├── certs/
+│   └── create_certs.py      (unverändert)
+└── go2rtc.yaml              (nicht angefasst, Zweck unklar)
+
+requirements.txt             ✅ neu (im Repo-Root)
+
+--------------------------------------------------------------------------------
+3. WAS WURDE GEBAUT (Zusammenfassung)
+--------------------------------------------------------------------------------
+
+### main.py
+- Lädt config.json per absolutem Pfad (CWD-unabhängig)
+- app["config"]   = gesamte config
+- app["sessions"] = {} (Token-Store, befüllt von auth.py)
+- app["state"]    = {pan, tilt, connected, user, role, client_ip}
+- SSL aus certs/cert.pem + certs/key.pem, Fallback auf HTTP
+- Startup-Hooks: start_capture, start_heartbeat, start_oled
+- Cleanup-Hooks: stop_capture,  stop_heartbeat,  stop_oled
+- Routen: GET /  GET /stream  GET /ws  POST /login  POST /logout  /static/
+
+### server/auth.py
+  hash_password(password, salt=None) → "salt$hash"
+  verify_password(stored, provided)  → bool
+  load_users(cfg)                    → dict  (mit Auto-Migration altem Format)
+  save_users(users, cfg)             → bool
+  create_session(app, user, role)    → token (str)
+  get_session(app, token)            → dict | None
+  remove_session(app, token)         → dict | None
+  login_handler(request)             → POST /login
+  logout_handler(request)            → POST /logout
+
+Login-Endpunkt:
+  POST /login  Body: {"user": "...", "pass": "..."}
+  Antwort:     {"token": "...", "user": "...", "role": "..."}
+  Fehler:      {"error": "..."} mit Status 401/400
+
+Auth-Bypass:
+  config.json "auth": {"required": false}
+  → jeder POST /login (auch ohne Body) bekommt Token als "Gast" mit Rolle "viewer"
+
+### server/stream.py
+  GET /stream?token=<session_token>
+  → multipart/x-mixed-replace MJPEG-Stream
+  → Token wird gegen app["sessions"] geprüft
+  → Bei auth.required=false: kein Token nötig
+
+Capture-Backends (in dieser Reihenfolge versucht):
+  1. v4l2capture  – rohe JPEG-Bytes, kein Re-Encoding (bevorzugt)
+  2. cv2          – Fallback, Re-Encoding (wird im Log gemeldet)
+
+Konfiguration aus config.json:
+  "stream": {"device": "/dev/video0", "width": 640, "height": 480}
+
+Hinweis: v4l2capture ist auf dem Pi nicht einfach installierbar. Im Betrieb
+läuft der Stream über cv2 (opencv-python-headless), was funktioniert.
+
+Fan-out: ein Capture-Task, beliebig viele Subscriber (asyncio.Queue je Client).
+Volle Queue → Frame überspringen, Verbindung bleibt offen.
+
+### server/websocket.py
+  GET /ws?token=<session_token>
+  → Token-Prüfung beim Verbindungsaufbau (bei ungültigem Token: 401)
+  → Sendet sofort den aktuellen Status als erstes JSON
+
+Rollen:
+  viewer  – nur Status-Empfang, Passwort ändern
+  user    – + Servo-Steuerung (move)
+  admin   – + User-Management, System-Kontrolle, Config
+
+Nachrichten-Typen (type-Feld im JSON):
+  move                → {pan: float, tilt: float}
+  change_password     → {old: str, new: str}
+  get_users           → [] (admin)
+  admin_create_user   → {username, password, is_admin} (admin)
+  admin_update_user   → {target_user, new_pass, is_admin} (admin)
+  admin_delete_user   → {target_user} (admin)
+  system_control      → {command: "restart_code"|"reboot"|"shutdown"} (admin)
+  get_config          → (admin) → antwortet mit {type:"config_data", config:{...}}
+  update_config       → {config: {...}} (admin)
+
+Heartbeat-Task: schreibt alle 2 s app["state"] ins SHM-File
+  → hält OLED-"Server online"-Anzeige am Leben
+
+### hardware/oled.py
+Portiert aus oled-menu.py. Läuft als asyncio.Task im gleichen Prozess.
+UI identisch zum Original (Dashboard Seiten 0-2, Menü: Zurück/Info/Reboot/Shutdown).
+Wenn Hardware fehlt (kein RPi): Task loggt Fehler und beendet sich sauber.
+
+### static/js/script.js (neu in dieser Session)
+Alter Flow (WebSocket-Login) → Neuer Flow (REST-Login + Token):
+  - performLogin(): fetch POST /login → speichert Token → öffnet WS mit ?token=
+  - performLogout(): fetch POST /logout → schließt WS → zeigt Login-Overlay
+  - WS wird erst nach erfolgreichem Login geöffnet (vorher war es global sofort)
+  - Stream-URL: /stream?token=<token> (vorher keine Auth)
+  - login_success WS-Nachricht entfernt (gibt es im neuen Backend nicht)
+
+### templates/index.html (neu in dieser Session)
+  - <iframe id="camStream"> → <img id="camStream"> (MJPEG braucht img-Tag)
+  - Logout-Button im Header ergänzt
+
+### config.json
+Zwei Sektionen gegenüber Original ergänzt:
+  "auth": {"required": true}
+  "stream": {"device": "/dev/video0", "width": 640, "height": 480}
+
+### requirements.txt (neu in dieser Session)
+  aiohttp, adafruit-circuitpython-servokit, board, Adafruit-Blinka, lgpio,
+  requests, luma.core, luma.oled, gpiozero, cryptography, opencv-python-headless
+
+  Installation: pip install -r requirements.txt
+  System-Pakete (weiterhin manuell via install.bat):
+    python3.13-dev, swig, liblgpio-dev, ffmpeg, go2rtc
+
+--------------------------------------------------------------------------------
+4. OFFENE PUNKTE
+--------------------------------------------------------------------------------
+
+NIEDRIGE PRIORITÄT – Design-Fragen (noch nicht entschieden):
+  - Session-Ablauf: Tokens laufen aktuell nie ab.
+    Soll ein TTL eingebaut werden?
+  - Mehrere gleichzeitige WS-Clients: Der zuletzt verbundene Client aktualisiert
+    app["state"] (und damit das OLED). Soll es eine "aktiver Controller"-Logik
+    geben (nur ein Client darf steuern, andere sind read-only)?
+  - go2rtc.yaml liegt in code/ – wurde nicht angefasst, Zweck unklar.
+    Ursprünglich für WebRTC-Stream gedacht (AVP-Feature), aktuell ungenutzt.
+
+--------------------------------------------------------------------------------
+5. SERVER STARTEN
+--------------------------------------------------------------------------------
+
+  cd /home/bot/bot-server/code
+  source ../venv/bin/activate
+  python main.py
+
+  Smoke-Test:
+    POST https://<pi-ip>:8080/login  {"user":"admin","pass":"..."}
+    → Token zurück
+    GET  https://<pi-ip>:8080/stream?token=<token>  im Browser
+
+================================================================================

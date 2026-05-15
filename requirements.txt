@@ -1,0 +1,11 @@
+aiohttp
+adafruit-circuitpython-servokit
+board
+Adafruit-Blinka
+lgpio
+requests
+luma.core
+luma.oled
+gpiozero
+cryptography
+opencv-python-headless

@@ -7,6 +7,9 @@ let isLoggedIn = false;
 let currentLoggedInUser = "";
 let userRole = 'user';
 let lastSend = 0;
+let sessionToken = null;
+let ws = null;
+let youHaveControl = false;
 // --- AVP VARIABLEN ---
 let xrSession = null;
 let initialYaw = null;
@@ -16,31 +19,38 @@ let videoTexture = null;
 let webrtcPeer = null;
 
 
-const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
-const ws = new WebSocket(`${protocol}://${host}:${port}/ws`);
+// --- STATUS HELPER ---
+function setStatus(connected) {
+    const dot  = document.getElementById('statusDot');
+    const text = document.getElementById('connectionStatus');
+    if (connected) {
+        dot.classList.add('connected');
+        text.textContent = 'Connected';
+    } else {
+        dot.classList.remove('connected');
+        text.textContent = 'Disconnected';
+    }
+}
 
-// --- WEBSOCKET LOGIK ---
-ws.onmessage = (event) => {
+// Enter key triggers login
+document.addEventListener('DOMContentLoaded', () => {
+    ['userInput', 'passInput'].forEach(id => {
+        document.getElementById(id)?.addEventListener('keydown', e => {
+            if (e.key === 'Enter') performLogin();
+        });
+    });
+});
+
+// --- WEBSOCKET MESSAGE HANDLER ---
+function handleWsMessage(event) {
     const data = JSON.parse(event.data);
 
     if (data.user) {
         currentLoggedInUser = data.user;
     }
 
-    if (data.type === 'login_success') {
-        isLoggedIn = true;
-        userRole = data.role;
-        document.getElementById('loginOverlay').style.display = 'none';
-        document.getElementById('displayUser').innerText = `${data.user} (${userRole})`;
-        document.getElementById('connectionStatus').innerText = "Connected";
-        document.getElementById('connectionStatus').style.color = "#00ff00";
-        document.getElementById('camStream').src = data.stream_url;
-
-        if (userRole === 'admin') {
-            document.getElementById('btn-system').style.display = 'inline-block';
-        } else {
-            document.getElementById('btn-system').style.display = 'none';
-        }
+    if (data.type === 'control_state') {
+        updateControlState(data);
     }
     else if (data.type === 'status') {
         currentPan = parseFloat(data.pan);
@@ -58,7 +68,7 @@ ws.onmessage = (event) => {
     else if (data.type === 'admin_action_success') {
         alert(data.message);
     }
-};
+}
 
 // --- CONTROL FUNCTIONS ---
 function sendAngles(p, t) {
@@ -66,7 +76,7 @@ function sendAngles(p, t) {
     if (now - lastSend < 50) return; // Rate Limiting
     lastSend = now;
 
-    if (ws.readyState === WebSocket.OPEN && isLoggedIn) {
+    if (ws && ws.readyState === WebSocket.OPEN && isLoggedIn && youHaveControl) {
         ws.send(JSON.stringify({ type: 'move', pan: Math.round(p), tilt: Math.round(t) }));
     }
 }
@@ -158,8 +168,12 @@ function fillAdminFields(config) {
     document.getElementById('cfg-oled-dt').value = config.oled.pin_dt;
     document.getElementById('cfg-oled-sw').value = config.oled.pin_sw;
 
+    document.getElementById('cfg-stream-width').value  = config.stream?.width  ?? 640;
+    document.getElementById('cfg-stream-height').value = config.stream?.height ?? 480;
+    document.getElementById('cfg-stream-device').value = config.stream?.device ?? '/dev/video0';
+
     document.getElementById('cfg-net-port').value = config.network.port;
-    document.getElementById('cfg-sec-token').value = config.security.cam_token;
+    document.getElementById('cfg-auth-required').checked = config.auth?.required ?? true;
 }
 
 function saveAdminConfig() {
@@ -185,118 +199,205 @@ function saveAdminConfig() {
             pin_sw: parseInt(document.getElementById('cfg-oled-sw').value),
             bounce_time: 0.3
         },
+        auth: { required: document.getElementById('cfg-auth-required').checked },
+        stream: {
+            device: document.getElementById('cfg-stream-device').value,
+            width:  parseInt(document.getElementById('cfg-stream-width').value),
+            height: parseInt(document.getElementById('cfg-stream-height').value),
+        },
         network: { host: "0.0.0.0", port: parseInt(document.getElementById('cfg-net-port').value) },
-        security: { cam_token: document.getElementById('cfg-sec-token').value },
         paths: { user_db: "users.json", shm_file: "/dev/shm/robot_status.json" }
     };
 
     ws.send(JSON.stringify({ type: 'update_config', config: updatedConfig }));
 }
 
-function performLogin() {
+// --- CONTROL MANAGEMENT ---
+function updateControlState(data) {
+    youHaveControl = data.you_have_control;
+    const label   = document.getElementById('controller-label');
+    const btnClaim   = document.getElementById('btn-claim');
+    const btnRelease = document.getElementById('btn-release');
+    const btnForce   = document.getElementById('btn-force');
+
+    if (!data.controller) {
+        label.textContent = 'No active controller';
+        label.style.color = '';
+        btnClaim.style.display   = isLoggedIn ? '' : 'none';
+        btnRelease.style.display = 'none';
+        btnForce.style.display   = 'none';
+    } else if (data.you_have_control) {
+        label.textContent = 'You are controlling';
+        label.style.color = '#22c55e';
+        btnClaim.style.display   = 'none';
+        btnRelease.style.display = '';
+        btnForce.style.display   = 'none';
+    } else {
+        label.textContent = `${data.controller} is controlling`;
+        label.style.color = '';
+        btnClaim.style.display   = 'none';
+        btnRelease.style.display = 'none';
+        btnForce.style.display   = userRole === 'admin' ? '' : 'none';
+    }
+}
+
+function claimControl() {
+    if (ws && ws.readyState === WebSocket.OPEN)
+        ws.send(JSON.stringify({ type: 'claim_control' }));
+}
+
+function releaseControl() {
+    if (ws && ws.readyState === WebSocket.OPEN)
+        ws.send(JSON.stringify({ type: 'release_control' }));
+}
+
+function forceControl() {
+    if (ws && ws.readyState === WebSocket.OPEN)
+        ws.send(JSON.stringify({ type: 'force_take_control' }));
+}
+
+// --- LOGIN / LOGOUT ---
+function connectWithToken(data) {
+    sessionToken = data.token;
+    isLoggedIn = true;
+    userRole = data.role;
+    currentLoggedInUser = data.user;
+
+    const isGuest = data.user === 'Guest';
+
+    document.getElementById('loginOverlay').style.display = 'none';
+    document.getElementById('displayUser').innerText = `${data.user} (${data.role})`;
+    setStatus(true);
+    const camImg = document.getElementById('camStream');
+    camImg.onload = function () {
+        if (this.naturalWidth && this.naturalHeight) {
+            document.querySelector('.video-container').style.aspectRatio =
+                `${this.naturalWidth} / ${this.naturalHeight}`;
+            this.onload = null;
+        }
+    };
+    camImg.src = `/stream?token=${sessionToken}`;
+    document.getElementById('btn-system').style.display  = userRole === 'admin' ? 'inline-block' : 'none';
+    document.getElementById('btn-profile').style.display = isGuest ? 'none' : '';
+    document.getElementById('btn-logout').textContent    = isGuest ? 'Admin Login' : 'Sign Out';
+
+    const wsProto = window.location.protocol === 'https:' ? 'wss' : 'ws';
+    ws = new WebSocket(`${wsProto}://${host}:${port}/ws?token=${sessionToken}`);
+    ws.onmessage = handleWsMessage;
+    ws.onerror = (e) => console.error('WebSocket error:', e);
+    ws.onclose = () => { isLoggedIn = false; setStatus(false); };
+}
+
+// Auto-login when auth is disabled (POST /login with no body returns 200)
+window.addEventListener('load', async () => {
+    try {
+        const resp = await fetch('/login', { method: 'POST' });
+        if (resp.ok) {
+            const data = await resp.json();
+            if (data.token) connectWithToken(data);
+        }
+    } catch (e) { /* auth required — login overlay stays visible */ }
+});
+
+async function performLogin() {
     const u = document.getElementById('userInput').value;
     const p = document.getElementById('passInput').value;
-    ws.send(JSON.stringify({ type: 'login', user: u, pass: p }));
+
+    let data;
+    try {
+        const resp = await fetch('/login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ user: u, pass: p })
+        });
+        data = await resp.json();
+        if (!resp.ok) {
+            alert(data.error || 'Login failed');
+            return;
+        }
+    } catch (e) {
+        alert('Connection error: ' + e.message);
+        return;
+    }
+
+    connectWithToken(data);
+}
+
+async function performLogout() {
+    if (sessionToken) {
+        await fetch('/logout', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ token: sessionToken })
+        }).catch(() => {});
+    }
+    if (ws) {
+        ws.close();
+        ws = null;
+    }
+    sessionToken = null;
+    isLoggedIn = false;
+    userRole = 'user';
+    currentLoggedInUser = '';
+    youHaveControl = false;
+
+    document.getElementById('camStream').src = '';
+    setStatus(false);
+    document.getElementById('displayUser').innerText = '—';
+    document.getElementById('btn-system').style.display  = 'none';
+    document.getElementById('btn-profile').style.display = '';
+    document.getElementById('btn-logout').textContent    = 'Sign Out';
+    document.getElementById('btn-claim').style.display   = 'none';
+    document.getElementById('btn-release').style.display = 'none';
+    document.getElementById('btn-force').style.display   = 'none';
+    document.getElementById('controller-label').textContent = 'No active controller';
+    document.getElementById('controller-label').style.color = '';
+    document.getElementById('loginOverlay').style.display = 'flex';
+    closeSettings();
 }
 
 function renderUserList(users) {
     const container = document.getElementById('userListContainer');
     container.innerHTML = '';
 
-    // 1. List existing users
     users.forEach(u => {
-        const row = document.createElement('div');
-        row.style = "display: flex; align-items: center; gap: 10px; background: #2a2a2a; padding: 10px; margin-bottom: 5px; border-radius: 5px;";
+        const isSelf = u.name === currentLoggedInUser;
+        const initials = u.name.slice(0, 2).toUpperCase();
+        const badgeClass = u.role === 'admin' ? 'badge-admin' : 'badge-user';
 
-        // Name
-        const nameLabel = document.createElement('span');
-        nameLabel.innerText = u.name;
-        nameLabel.style = "flex: 1; font-weight: bold;";
-
-        // PW Reset
-        const pwInput = document.createElement('input');
-        pwInput.type = "password";
-        pwInput.placeholder = "Reset PW";
-        pwInput.id = `pw-reset-${u.name}`;
-        pwInput.style = "width: 100px; padding: 5px; margin: 0;";
-
-        // Admin Checkbox
-        const roleLabel = document.createElement('label');
-        roleLabel.style = "display: flex; align-items: center; gap: 5px; font-size: 0.8rem; cursor: pointer;";
-        const roleCheck = document.createElement('input');
-        roleCheck.type = "checkbox";
-        roleCheck.id = `role-check-${u.name}`;
-        if (u.role === 'admin') roleCheck.checked = true;
-        roleLabel.appendChild(roleCheck);
-        roleLabel.appendChild(document.createTextNode("Admin"));
-
-        // Save Button
-        const saveBtn = document.createElement('button');
-        saveBtn.innerText = "💾";
-        saveBtn.title = "Save changes";
-        saveBtn.style = "width: auto; padding: 5px 10px; background: #007bff; margin: 0;";
-        saveBtn.onclick = () => submitUserUpdate(u.name);
-
-        row.appendChild(nameLabel);
-        row.appendChild(pwInput);
-        row.appendChild(roleLabel);
-        row.appendChild(saveBtn);
-        container.appendChild(row);
-
-        // Delete Button
-        const delBtn = document.createElement('button');
-        delBtn.innerText = "🗑️";
-        delBtn.title = "Delete";
-
-        if (u.name === currentLoggedInUser) {
-            delBtn.style = "width: auto; padding: 5px 10px; background: #555; margin: 0; margin-left: 5px; cursor: not-allowed; opacity: 0.5;";
-            delBtn.disabled = true;
-            delBtn.title = "You cant delete yourself!";
-        } else {
-            delBtn.style = "width: auto; padding: 5px 10px; background: #dc3545; margin: 0; margin-left: 5px;";
-            delBtn.onclick = () => deleteUser(u.name);
-        }
-
-        row.appendChild(delBtn);
+        const card = document.createElement('div');
+        card.className = 'user-card';
+        card.innerHTML = `
+            <div class="user-avatar">${initials}</div>
+            <span class="user-name">
+                ${u.name}
+                <span class="badge ${badgeClass}">${u.role}</span>
+            </span>
+            <div class="user-controls">
+                <input type="password" id="pw-reset-${u.name}" placeholder="New password">
+                <label class="admin-toggle">
+                    <input type="checkbox" id="role-check-${u.name}" ${u.role === 'admin' ? 'checked' : ''}>
+                    Admin
+                </label>
+                <button class="icon-btn save" title="Save" onclick="submitUserUpdate('${u.name}')">💾</button>
+                <button class="icon-btn del" title="Delete" onclick="deleteUser('${u.name}')" ${isSelf ? 'disabled' : ''}>🗑</button>
+            </div>
+        `;
+        container.appendChild(card);
     });
 
-    // 2. Box for new users
-    const newRow = document.createElement('div');
-    // Dashed Border
-    newRow.style = "display: flex; align-items: center; gap: 10px; background: #222; padding: 10px; margin-top: 20px; border: 1px dashed #666; border-radius: 5px;";
-
-    const newNameInput = document.createElement('input');
-    newNameInput.type = "text";
-    newNameInput.placeholder = "New Username";
-    newNameInput.id = "new-user-name";
-    newNameInput.style = "flex: 1; padding: 5px; margin: 0; background: #333; color: #fff; border: 1px solid #555;";
-
-    const newPassInput = document.createElement('input');
-    newPassInput.type = "password";
-    newPassInput.placeholder = "Password";
-    newPassInput.id = "new-user-pass";
-    newPassInput.style = "width: 100px; padding: 5px; margin: 0; background: #333; color: #fff; border: 1px solid #555;";
-
-    const newRoleLabel = document.createElement('label');
-    newRoleLabel.style = "display: flex; align-items: center; gap: 5px; font-size: 0.8rem; cursor: pointer;";
-    const newRoleCheck = document.createElement('input');
-    newRoleCheck.type = "checkbox";
-    newRoleCheck.id = "new-user-admin";
-    newRoleLabel.appendChild(newRoleCheck);
-    newRoleLabel.appendChild(document.createTextNode("Admin"));
-
-    const addBtn = document.createElement('button');
-    addBtn.innerText = "➕";
-    addBtn.title = "Add User";
-    addBtn.style = "width: auto; padding: 5px 10px; background: #28a745; margin: 0;"; // Grün
-    addBtn.onclick = createNewUser;
-
-    newRow.appendChild(newNameInput);
-    newRow.appendChild(newPassInput);
-    newRow.appendChild(newRoleLabel);
-    newRow.appendChild(addBtn);
-
-    container.appendChild(newRow);
+    // Add user row
+    const addRow = document.createElement('div');
+    addRow.className = 'add-user-row';
+    addRow.innerHTML = `
+        <input type="text" id="new-user-name" placeholder="Username">
+        <input type="password" id="new-user-pass" placeholder="Password">
+        <label class="admin-toggle">
+            <input type="checkbox" id="new-user-admin"> Admin
+        </label>
+        <button class="btn-add" onclick="createNewUser()">+ Add</button>
+    `;
+    container.appendChild(addRow);
 }
 
 function createNewUser() {
@@ -352,7 +453,7 @@ function submitUserUpdate(username) {
 }
 
 function deleteUser(username) {
-    if (confirm(`Do you really want to permanently delete the user '${username}'?`)) {
+    if (confirm(`Permanently delete user '${username}'?`)) {
         ws.send(JSON.stringify({
             type: 'admin_delete_user',
             target_user: username
@@ -362,9 +463,9 @@ function deleteUser(username) {
 
 function triggerSystem(action) {
     let text = "";
-    if (action === 'restart_code') text = "Restart code?";
-    if (action === 'reboot') text = "Restart System?";
-    if (action === 'shutdown') text = "Shutdown System?";
+    if (action === 'restart_code') text = "Restart the server code?";
+    if (action === 'reboot')       text = "Reboot the Raspberry Pi?";
+    if (action === 'shutdown')     text = "Shut down the Raspberry Pi?";
 
     if (confirm(text)) {
         ws.send(JSON.stringify({
@@ -374,7 +475,7 @@ function triggerSystem(action) {
 
         if (action !== 'restart_code') {
             closeSettings();
-            alert("Action sent. Terminating connection.");
+            alert("Command sent. The connection will close.");
         }
     }
 }
@@ -478,24 +579,24 @@ async function startAVPSession() {
 
         // SHADER SETUP (Vertex Shader)
         const vs = `
-            attribute vec3 pos; 
-            attribute vec2 uv; 
+            attribute vec3 pos;
+            attribute vec2 uv;
             varying vec2 vUv;
             uniform mat4 uProjectionMatrix;
             uniform mat4 uModelViewMatrix;
-            void main() { 
-                vUv = uv; 
-                gl_Position = uProjectionMatrix * uModelViewMatrix * vec4(pos, 1.0); 
+            void main() {
+                vUv = uv;
+                gl_Position = uProjectionMatrix * uModelViewMatrix * vec4(pos, 1.0);
             }
         `;
 
         // SHADER SETUP (Fragment Shader)
         const fs = `
-            precision mediump float; 
-            uniform sampler2D tex; 
-            varying vec2 vUv; 
-            void main() { 
-                gl_FragColor = texture2D(tex, vUv); 
+            precision mediump float;
+            uniform sampler2D tex;
+            varying vec2 vUv;
+            void main() {
+                gl_FragColor = texture2D(tex, vUv);
             }
         `;
 
@@ -629,4 +730,3 @@ function processRobotControl(pose) {
     let targetTilt = 90 - (pitch - initialPitch);
     sendAngles(targetPan, targetTilt);
 }
-

@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="de">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -14,148 +14,264 @@
             <div class="header-title">Robot Control</div>
         </div>
         <div class="header-right">
-            <button id="btn-avp" class="settings-btn" onclick="openAVPSettings()" style="background-color: #007aff; border-color: #0056b3; margin-right: 10px;">🥽 Vision Pro</button>
-            <button class="settings-btn" onclick="openUserSettings()">👤 Profil</button>
-            <button id="btn-system" class="settings-btn admin-only" onclick="openSystemSettings()" style="display:none; margin-left: 10px; background-color: #d63384; border-color: #b02a6b;">⚙️ System</button>
+            <button id="btn-avp" class="btn btn-avp" onclick="openAVPSettings()">🥽 Vision Pro</button>
+            <button id="btn-profile" class="btn btn-ghost" onclick="openUserSettings()">👤 Profile</button>
+            <button id="btn-system" class="btn btn-admin" onclick="openSystemSettings()" style="display:none;">⚙️ System</button>
+            <button id="btn-logout" class="btn btn-danger" onclick="performLogout()">Sign Out</button>
         </div>
     </header>
 
+    <!-- LOGIN -->
     <div id="loginOverlay" class="overlay">
-        <div class="box login-box">
-            <h2>System Login</h2>
-            <input type="text" id="userInput" placeholder="Username" autocomplete="off">
-            <input type="password" id="passInput" placeholder="Password">
-            <button onclick="performLogin()">Verbinden</button>
+        <div class="login-box">
+            <div class="login-logo">🤖</div>
+            <h2>Robot Control</h2>
+            <p class="login-subtitle">Sign in to continue</p>
+            <div class="form-field">
+                <label for="userInput">Username</label>
+                <input type="text" id="userInput" placeholder="Enter username" autocomplete="off">
+            </div>
+            <div class="form-field">
+                <label for="passInput">Password</label>
+                <input type="password" id="passInput" placeholder="Enter password">
+            </div>
+            <button class="btn-submit" onclick="performLogin()">Sign In</button>
         </div>
     </div>
 
+    <!-- SETTINGS OVERLAY -->
     <div id="settingsOverlay" class="overlay" style="display: none;">
-        <div class="box settings-box">
-            <span class="close-icon" onclick="closeSettings()">&times;</span>
+        <div class="settings-box">
 
+            <!-- Profile -->
             <div id="userSettingsArea">
-                <h1>Profil Settings</h1>
-
-                <div class="settings-section">
-                    <h3>Change Password</h3>
-                    <input type="password" id="oldPass" placeholder="Old Password">
-                    <input type="password" id="newPass" placeholder="New Password">
-                    <button onclick="changePassword()">Save Password</button>
+                <div class="settings-header">
+                    <h2 class="settings-title">👤 Profile</h2>
+                    <button class="close-btn" onclick="closeSettings()">✕</button>
                 </div>
+                <div class="settings-body">
 
-                <div id="adminUserMgmt" style="display: none; margin-top: 30px; border-top: 1px solid #444; padding-top: 10px;">
-                    <h3 style="color: #d21616;">User administration (admin)</h3>
-                    <div id="userListContainer">
+                    <div class="settings-section">
+                        <div class="section-label">Change Password</div>
+                        <div class="input-row">
+                            <input type="password" id="oldPass" placeholder="Current password">
+                            <input type="password" id="newPass" placeholder="New password">
                         </div>
+                        <button class="btn-action btn-save-pw" onclick="changePassword()">Save Password</button>
+                    </div>
+
+                    <div id="adminUserMgmt" style="display: none;">
+                        <hr class="divider">
+                        <div class="settings-section">
+                            <div class="section-label">User Administration</div>
+                            <div id="userListContainer"></div>
+                        </div>
+                    </div>
+
+                </div>
+                <div class="settings-footer">
+                    <button class="btn-action btn-close-settings" onclick="closeSettings()">Close</button>
                 </div>
             </div>
 
+            <!-- System / Admin -->
             <div id="adminArea" style="display: none;">
-                <h1 style="color: #d21616;">System-Configuration</h1>
+                <div class="settings-header">
+                    <h2 class="settings-title">⚙️ System Configuration</h2>
+                    <button class="close-btn" onclick="closeSettings()">✕</button>
+                </div>
+                <div class="settings-body">
 
-                <div class="settings-group" style="border-color: #ff4444; background: rgba(255, 0, 0, 0.1);">
-                <h4 style="color: #ff4444; margin-top: 0;">Power Management</h4>
-                <div style="display: flex; gap: 10px; flex-wrap: wrap;">
-                    <button onclick="triggerSystem('restart_code')" style="background-color: #ff9800; border-color: #e68900; flex: 1;">
-                        🔁 Code Neustart
-                    </button>
-                    <button onclick="triggerSystem('reboot')" style="background-color: #dc3545; border-color: #b02a37; flex: 1;">
-                        🔄 Pi Reboot
-                    </button>
-                    <button onclick="triggerSystem('shutdown')" style="background-color: #8b0000; border-color: #5c0000; flex: 1;">
-                        🛑 Pi Aus
-                    </button>
+                    <div class="settings-section">
+                        <div class="section-label">Power Management</div>
+                        <div class="danger-card">
+                            <div class="power-grid">
+                                <button class="btn-power btn-restart" onclick="triggerSystem('restart_code')">🔁 Restart Code</button>
+                                <button class="btn-power btn-reboot"  onclick="triggerSystem('reboot')">🔄 Reboot Pi</button>
+                                <button class="btn-power btn-shutdown" onclick="triggerSystem('shutdown')">🛑 Shutdown</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="settings-section">
+                        <div class="section-label">Camera</div>
+                        <div class="config-card">
+                            <div class="config-grid">
+                                <div class="config-field">
+                                    <label>Width (px)</label>
+                                    <input type="number" id="cfg-stream-width" min="160" step="1">
+                                </div>
+                                <div class="config-field">
+                                    <label>Height (px)</label>
+                                    <input type="number" id="cfg-stream-height" min="120" step="1">
+                                </div>
+                                <div class="config-field span-2">
+                                    <label>Device</label>
+                                    <input type="text" id="cfg-stream-device">
+                                </div>
+                            </div>
+                            <p class="toggle-hint" style="margin-top: 10px;">⟳ Restart Code required for resolution changes to take effect.</p>
+                        </div>
+                    </div>
+
+                    <div class="settings-section">
+                        <div class="section-label">Servos (Pan / Tilt)</div>
+                        <div class="config-card">
+                            <div class="config-grid">
+                                <div class="config-field">
+                                    <label>Pan Channel</label>
+                                    <input type="number" id="cfg-pan-ch">
+                                </div>
+                                <div class="config-field">
+                                    <label>Tilt Channel</label>
+                                    <input type="number" id="cfg-tilt-ch">
+                                </div>
+                                <div class="config-field">
+                                    <label>Pan Min°</label>
+                                    <input type="number" id="cfg-pan-min">
+                                </div>
+                                <div class="config-field">
+                                    <label>Pan Max°</label>
+                                    <input type="number" id="cfg-pan-max">
+                                </div>
+                                <div class="config-field">
+                                    <label>Tilt Min°</label>
+                                    <input type="number" id="cfg-tilt-min">
+                                </div>
+                                <div class="config-field">
+                                    <label>Tilt Max°</label>
+                                    <input type="number" id="cfg-tilt-max">
+                                </div>
+                                <div class="config-field span-2">
+                                    <div class="toggle-row">
+                                        <label for="cfg-pan-rev">Reverse Pan direction</label>
+                                        <input type="checkbox" id="cfg-pan-rev">
+                                    </div>
+                                    <div class="toggle-row">
+                                        <label for="cfg-tilt-rev">Reverse Tilt direction</label>
+                                        <input type="checkbox" id="cfg-tilt-rev">
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="settings-section">
+                        <div class="section-label">Display &amp; Input</div>
+                        <div class="config-card" style="margin-bottom: 8px;">
+                            <div class="subsection-label">OLED Display</div>
+                            <div class="config-grid" style="grid-template-columns: 1fr;">
+                                <div class="config-field">
+                                    <label>I2C Address</label>
+                                    <input type="text" id="cfg-oled-addr">
+                                </div>
+                            </div>
+                        </div>
+                        <div class="config-card">
+                            <div class="subsection-label">Rotary Encoder</div>
+                            <div class="config-grid">
+                                <div class="config-field">
+                                    <label>CLK Pin</label>
+                                    <input type="number" id="cfg-oled-clk">
+                                </div>
+                                <div class="config-field">
+                                    <label>DT Pin</label>
+                                    <input type="number" id="cfg-oled-dt">
+                                </div>
+                                <div class="config-field">
+                                    <label>SW Pin (Button)</label>
+                                    <input type="number" id="cfg-oled-sw">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="settings-section">
+                        <div class="section-label">Network &amp; Access</div>
+                        <div class="config-card">
+                            <div class="config-grid" style="grid-template-columns: 1fr;">
+                                <div class="config-field">
+                                    <label>Server Port</label>
+                                    <input type="number" id="cfg-net-port">
+                                </div>
+                            </div>
+                            <div style="border-top: 1px solid var(--border); margin-top: 12px; padding-top: 12px;">
+                                <div class="toggle-row">
+                                    <label for="cfg-auth-required">Require Login</label>
+                                    <input type="checkbox" id="cfg-auth-required">
+                                </div>
+                                <p class="toggle-hint">When disabled, anyone on the network can access the robot without a password.</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <button class="btn-action btn-save-cfg" onclick="saveAdminConfig()">💾 Save Configuration</button>
+
+                </div>
+                <div class="settings-footer">
+                    <button class="btn-action btn-close-settings" onclick="closeSettings()">Close</button>
                 </div>
             </div>
 
-                <div class="settings-group";>
-                    <h4>Servos (Pan/Tilt)</h4>
-                    <div class="admin-grid">
-                        <label>Pan Channel: <input type="number" id="cfg-pan-ch"></label>
-                        <label>Tilt Channel: <input type="number" id="cfg-tilt-ch"></label>
-
-                        <label class="checkbox-label">
-                            <input type="checkbox" id="cfg-pan-rev"> Reverse Pan
-                        </label>
-                        <label class="checkbox-label">
-                            <input type="checkbox" id="cfg-tilt-rev"> Reverse Tilt
-                        </label>
-
-                        <label>Pan Min: <input type="number" id="cfg-pan-min"></label>
-                        <label>Pan Max: <input type="number" id="cfg-pan-max"></label>
-                        <label>Tilt Min: <input type="number" id="cfg-tilt-min"></label>
-                        <label>Tilt Max: <input type="number" id="cfg-tilt-max"></label>
-                    </div>
-                </div>
-
-                <div class="settings-group">
-                    <h4>OLED Display Pins</h4>
-                    <div class="admin-grid">
-                        <label>I2C Adr: <input type="text" id="cfg-oled-addr"></label>
-                        <label>Pin CLK: <input type="number" id="cfg-oled-clk"></label>
-                        <label>Pin DT: <input type="number" id="cfg-oled-dt"></label>
-                        <label>Pin SW: <input type="number" id="cfg-oled-sw"></label>
-                    </div>
-                </div>
-
-                <div class="settings-group">
-                    <h4>Network</h4>
-                    <div class="admin-grid">
-                        <label>Server Port: <input type="number" id="cfg-net-port"></label>
-                        <label>go2RTC Token (not needed): <input type="text" id="cfg-sec-token"></label>
-                    </div>
-                </div>
-
-                <button class="admin-save-btn" onclick="saveAdminConfig()">Save Configuration</button>
-            </div>
-
-            <button class="secondary" onclick="closeSettings()" style="margin-top: 20px;">Close</button>
         </div>
     </div>
 
+    <!-- MAIN -->
     <div class="main-content">
         <div class="video-container">
             <div class="control-layer" id="mouseZone"></div>
-            <iframe id="camStream" src=""></iframe>
+            <img id="camStream" src="" alt="" style="width:100%;height:100%;object-fit:contain;display:block;">
         </div>
 
         <div class="status-panel">
-            <div>Status: <span id="connectionStatus" style="color:red">Disconnected</span></div>
-            <div>User: <span id="displayUser">-</span></div>
+            <div class="status-item">
+                <div class="status-dot" id="statusDot"></div>
+                <span id="connectionStatus">Disconnected</span>
+            </div>
+            <div class="status-item">
+                <span>👤</span>
+                <span id="displayUser">—</span>
+            </div>
         </div>
 
-        <div class="hint">
-            Controls: Click & drag in the video<br>
-            or use arrow keys.
+        <div class="control-bar">
+            <span id="controller-label" class="controller-label">No active controller</span>
+            <button id="btn-claim"   class="btn btn-primary" onclick="claimControl()"   style="display:none;">Take Control</button>
+            <button id="btn-release" class="btn btn-ghost"   onclick="releaseControl()" style="display:none;">Release Control</button>
+            <button id="btn-force"   class="btn btn-admin"   onclick="forceControl()"   style="display:none;">⚡ Override</button>
         </div>
+
+        <div class="hint">Click &amp; drag in the video to control · Arrow keys also work</div>
     </div>
 
     <script src="/static/js/script.js"></script>
 
+    <!-- AVP OVERLAY -->
     <div id="avpOverlay" class="overlay" style="display: none;">
-    <div class="box settings-box">
-        <span class="close-icon" onclick="closeAVP()">&times;</span>
-        <h1>Vision Pro Control</h1>
-        <p style="color: #888; font-size: 0.9rem;">Control the robot by moving your head in the immersive space.</p>
-
-        <div class="settings-section">
-            <button id="xrButton" onclick="startAVPSession()" style="background-color: #ffffff; color: #000; font-weight: bold; border-radius: 50px;">
-                Start Immersive Session
-            </button>
+        <div class="settings-box avp-box">
+            <div class="settings-header">
+                <h2 class="settings-title">🥽 Vision Pro Control</h2>
+                <button class="close-btn" onclick="closeAVP()">✕</button>
+            </div>
+            <div class="settings-body">
+                <p style="color: var(--text-secondary); font-size: 0.85rem; margin: 0 0 20px;">
+                    Control the robot by moving your head in the immersive space.
+                </p>
+                <button id="xrButton" onclick="startAVPSession()">Start Immersive Session</button>
+                <div id="avpStatus" style="margin-top: 16px; font-family: monospace; font-size: 11px; color: var(--text-muted);">
+                    Ready for XR…
+                </div>
+                <canvas id="xrCanvas" style="display:none;"></canvas>
+            </div>
+            <div class="settings-footer">
+                <button class="btn-action btn-close-settings" onclick="closeAVP()">Close</button>
+            </div>
         </div>
-
-        <div id="avpStatus" style="margin-top: 15px; font-family: monospace; font-size: 12px; color: #aaa;">
-            Bereit für XR...
-        </div>
-
-        <canvas id="xrCanvas" style="display:none;"></canvas>
-        <button class="secondary" onclick="closeAVP()" style="margin-top: 20px;">Close</button>
-    </div>
         <video id="xrVideoSource" crossorigin="anonymous"
-               style="position: absolute; top: 0; left: 0; width: 1px; height: 1px; opacity: 0; z-index: -1; pointer-events: none;"
+               style="position:absolute;top:0;left:0;width:1px;height:1px;opacity:0;z-index:-1;pointer-events:none;"
                autoplay playsinline muted>
         </video>
+    </div>
 
-</div>
 </body>
 </html>
